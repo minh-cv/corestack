@@ -36,6 +36,11 @@ add_library(daemon src/daemon/daemon.c)
 target_include_directories(daemon PUBLIC include)
 
 
+add_library(logger src/logger/logger.c)
+target_include_directories(logger PUBLIC include)
+target_link_libraries(logger PUBLIC wire)
+
+
 # add_executable(tetrisu src/tetrisu/main.c
 #     src/tetrisu/config_var.c)
 # target_include_directories(tetrisu PRIVATE src/tetrisu)
@@ -50,6 +55,7 @@ install(
         config
         server
         daemon
+        logger
     RUNTIME DESTINATION bin           # for executables (and DLLs on Windows)
     LIBRARY DESTINATION lib           # for shared libraries on Unix
     ARCHIVE DESTINATION lib           # for static libs (.a, .lib)
