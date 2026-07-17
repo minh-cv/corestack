@@ -23,6 +23,10 @@ target_include_directories(common PUBLIC include)
 target_link_libraries(common PUBLIC crypto)
 
 
+add_library(config src/config/config.c)
+target_include_directories(config PUBLIC include)
+
+
 add_library(server src/server/client_io.c src/server/client_auth.c)
 target_include_directories(server PUBLIC src/server include)
 target_link_libraries(server PUBLIC tetrissh)
@@ -40,6 +44,8 @@ install(
     TARGETS
         htttp
         tetrissh
+        common
+        config
         server
     RUNTIME DESTINATION bin           # for executables (and DLLs on Windows)
     LIBRARY DESTINATION lib           # for shared libraries on Unix
