@@ -82,7 +82,6 @@ int mod_epoll_events(int epoll_fd, int fd, uint32_t events) {
 
 void client_io_free(struct ClientIo *c) {
     assert(c != NULL);
-    close(c->fd);
     client_io_pop_frame(c, c->frame_count);
 }
 
