@@ -2,10 +2,9 @@
 #define TETRISH_SSH_H
 
 #include "common.h"
+#include "wire.h" // IWYU pragma: keep
 #include <openssl/types.h>
 #include <stdint.h>
-
-#define FRAME_MAX ((64u * 1024u) - sizeof(uint32_t))
 
 typedef struct TetrishCredential {
     EVP_PKEY* private_key;
@@ -17,9 +16,6 @@ typedef unsigned char SessionKey[SESSION_KEY_LEN];
 
 int tetrish_credential_init(TetrishCredential* buf, const char* key_path, const char* certificate_path);
 void tetrish_credential_free(TetrishCredential* buf);
-
-uint32_t decode_u32_be(const uint8_t buf[4]);
-void encode_u32_be(uint8_t buf[4], uint32_t value);
 
 int tetrish_client_handshake(int sockfd, const char* ca_path, SessionKey* session_key);
 unsigned char* tetrish_server_sign_nonce(unsigned char* nonce, uint32_t nonce_length, EVP_PKEY* private_key, uint32_t* response_length);

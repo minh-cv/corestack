@@ -15,7 +15,11 @@ target_include_directories(htttp PUBLIC include)
 
 add_library(tetrissh src/libtetrissh/tetrissh.c)
 target_include_directories(tetrissh PUBLIC include)
-target_link_libraries(tetrissh PUBLIC common)
+target_link_libraries(tetrissh PUBLIC common wire)
+
+
+add_library(wire src/wire/wire.c)
+target_include_directories(wire PUBLIC include)
 
 
 add_library(common src/common/common.c)
@@ -44,6 +48,7 @@ install(
     TARGETS
         htttp
         tetrissh
+        wire
         common
         config
         server
