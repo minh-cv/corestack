@@ -65,7 +65,7 @@ ClientIoResult client_unauthed_transist_read(int epoll_fd, struct ClientIo* c_ba
         if (server_auth_session_key(c_base, c->credential, &c->key) == -1) {
             return CLIENT_IO_ERR;
         }
-        return CLIENT_IO_DONE;
+        return CLIENT_IO_YIELD;
     }
     assert(false);
     return CLIENT_IO_ERR;

@@ -31,7 +31,8 @@ typedef enum ClientIoResult {
     CLIENT_IO_ERR,
     CLIENT_IO_OK,
     CLIENT_IO_CONTINUE,
-    CLIENT_IO_DONE, // for voluntarily closing
+    CLIENT_IO_CLOSE, // for manual closing
+    CLIENT_IO_YIELD, // for extra operations that needs control from the server
 } ClientIoResult;
 
 typedef struct ClientIo {
