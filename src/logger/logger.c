@@ -156,13 +156,14 @@ static int send_frame(int sockfd, unsigned char* plaintext, uint32_t plaintext_l
 
 int _logger_log(char* string) {
     if (is_file) {
+        if (log_file == NULL) return -1; 
         size_t len = strlen(string);
         int failed = (fwrite(string, 1, len, log_file) != len) || (fflush(log_file) == EOF);
         free(string);
         return failed ? -1 : 0;
     }
 
-    if (string == NULL) {
+    if (string == NULL || log_fd == -1) {
         return -1;
     }
 
