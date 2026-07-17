@@ -27,9 +27,14 @@ add_library(config src/config/config.c)
 target_include_directories(config PUBLIC include)
 
 
-add_library(server src/server/client_io.c src/server/client_auth.c)
+add_library(client_io src/server/client_io.c)
+target_include_directories(client_io PUBLIC src/server include)
+target_link_libraries(client_io PUBLIC wire)
+
+
+add_library(server src/server/client_auth.c)
 target_include_directories(server PUBLIC src/server include)
-target_link_libraries(server PUBLIC tetrissh)
+target_link_libraries(server PUBLIC tetrissh client_io)
 
 
 add_library(daemon src/daemon/daemon.c)
@@ -53,6 +58,7 @@ install(
         wire
         common
         config
+        client_io
         server
         daemon
         logger

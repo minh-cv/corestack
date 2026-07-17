@@ -1,9 +1,10 @@
 #include "client_io.h"
-#include "tetrissh.h"
+#include "wire.h"
 
 #include <assert.h>
 #include <sched.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/epoll.h>
