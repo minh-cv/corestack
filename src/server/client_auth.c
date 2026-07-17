@@ -81,6 +81,7 @@ ClientIoResult client_unauthed_transit_write(int epoll_fd, struct ClientIo* c_ba
     }
 
     client_io_transit_state(c_base, CLIENT_READING_LEN, 1);
+    c->auth_state = CLIENT_UNAUTHED_SYMKEY;
     return CLIENT_IO_OK;
 }
 
