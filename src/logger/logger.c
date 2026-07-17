@@ -109,7 +109,7 @@ char* _logger_make_log(enum LoggerSeverity severity, const char* group, const ch
     }
 
     size_t total_len = (size_t)prefix_len + (size_t)msg_len;
-    char* result = malloc(total_len + 1);
+    char* result = malloc(total_len + 2);
     if (result == NULL) {
         va_end(args);
         return NULL;
@@ -120,6 +120,8 @@ char* _logger_make_log(enum LoggerSeverity severity, const char* group, const ch
     // each call confined to its own slice of `result`.
     snprintf(result, (size_t)prefix_len + 1, PREFIX_FMT, date, file, line, severity_str, group_str);
     vsnprintf(result + prefix_len, (size_t)msg_len + 1, fmt, args);
+    result[total_len] = '\n';
+    result[total_len + 1] = '\0';
 
     va_end(args);
     return result;

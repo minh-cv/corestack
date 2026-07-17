@@ -8,6 +8,8 @@
 #define TETRISH_LOGGER_H
 
 #include <stdio.h>
+#include <errno.h>
+#include <string.h> // IWYU pragma: export
 
 typedef enum LoggerSeverity {
     LOG_DEBUG,
@@ -43,5 +45,7 @@ int logger_free();
 
 #define LOGGER_LOG(severity, group, ...) \
     _logger_log((LOGGER_MAKE_LOG(severity, group, __VA_ARGS__)))
+
+#define LOGGER_PERROR(group, msg) LOGGER_LOG(LOG_ERROR, group, "%s: %s", (msg), (strerror(errno)))
 
 #endif
