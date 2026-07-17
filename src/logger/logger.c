@@ -13,51 +13,43 @@
 
 static int log_fd = -1;
 static FILE* log_file = NULL;
-static bool is_file = false;
 
-int logger_init_ipc(const char* log_ipc) {
-    int sockfd = socket(AF_UNIX, SOCK_STREAM, 0);
-    if (sockfd == -1) {
-        perror("socket");
-        return -1;
+int logger_log_null(char* string) {
+    free(string);
+    return -1;
+}
+
+static int (*logger_fn)(char*) = logger_log_null;
+
+static int logger_log_file(char* string) {
+    if (log_file == NULL) {
+        free(string);
+        return -1; 
     }
-
-    struct sockaddr_un addr;
-    addr.sun_family = AF_UNIX;
-    size_t log_path_length = strlen(log_ipc);
-    if (log_path_length >= sizeof(addr.sun_path)) {
-        fputs("log_path too long", stderr);
-        close(sockfd);
-        return -1;
-    }
-    memcpy(addr.sun_path, log_ipc, log_path_length);
-    addr.sun_path[log_path_length] = '\0';
-
-    if (connect(sockfd, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
-        perror("connect");
-        close(sockfd);
-        return -1;
-    }
-
-    log_fd = sockfd;
-    return 0;
+    size_t len = strlen(string);
+    int failed = (fwrite(string, 1, len, log_file) != len) || (fflush(log_file) == EOF);
+    free(string);
+    return failed ? -1 : 0;
 }
 
 void logger_init_file(FILE *file) {
     log_file = file;
-    is_file = true;
+    logger_set_log_handler(logger_log_file);
 }
 
-int logger_free() {
-    if (is_file) {
-        assert(log_file != NULL);
-        fclose(log_file);
-        log_file = NULL;
-        return 0;
-    }
+int logger_free_file() {
+    assert(log_file != NULL);
+    int close_val = fclose(log_file);
+    log_file = NULL;
+    logger_set_log_handler(logger_log_null);
+    return close_val;
+}
+
+int logger_free_ipc() {
     assert(log_fd != -1);
     int close_val = close(log_fd);
     log_fd = -1;
+    logger_set_log_handler(logger_log_null);
     return close_val;
 }
 
@@ -154,21 +146,19 @@ static int send_frame(int sockfd, unsigned char* plaintext, uint32_t plaintext_l
     return 0;
 }
 
-int _logger_log(char* string) {
-    if (is_file) {
-        if (log_file == NULL) return -1; 
-        size_t len = strlen(string);
-        int failed = (fwrite(string, 1, len, log_file) != len) || (fflush(log_file) == EOF);
-        free(string);
-        return failed ? -1 : 0;
-    }
+void logger_set_log_handler(int (*fn)(char *)) {
+    logger_fn = fn;
+}
 
+static int logger_log_ipc(char* string) {
     if (string == NULL || log_fd == -1) {
+        free(string);
         return -1;
     }
 
     size_t strlen_sz = strlen(string);
     if (strlen_sz > UINT32_MAX) {
+        free(string);
         return -1;
     }
 
@@ -177,4 +167,38 @@ int _logger_log(char* string) {
     free(string);
 
     return retval;
+}
+
+int logger_init_ipc(const char* log_ipc) {
+    int sockfd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (sockfd == -1) {
+        perror("socket");
+        return -1;
+    }
+
+    struct sockaddr_un addr;
+    addr.sun_family = AF_UNIX;
+    size_t log_path_length = strlen(log_ipc);
+    if (log_path_length >= sizeof(addr.sun_path)) {
+        fputs("log_path too long", stderr);
+        close(sockfd);
+        return -1;
+    }
+    memcpy(addr.sun_path, log_ipc, log_path_length);
+    addr.sun_path[log_path_length] = '\0';
+
+    if (connect(sockfd, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
+        perror("connect");
+        close(sockfd);
+        return -1;
+    }
+
+    log_fd = sockfd;
+
+    logger_set_log_handler(logger_log_ipc);
+    return 0;
+}
+
+int _logger_log(char* string) {
+    return logger_fn(string);
 }

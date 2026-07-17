@@ -29,16 +29,28 @@ int logger_init_ipc(const char* log_ipc);
 void logger_init_file(FILE* file);
 
 /*!
+    @brief set a handler that does the "logging", taking ownership of the string.
+*/
+void logger_set_log_handler(int (*fn)(char*));
+
+/*!
     @brief Produce a formatted heap-allocated string, with the current time.
 */
 char* _logger_make_log(enum LoggerSeverity severity, const char* group, const char* file, int line, const char* fmt, ...);
 
 /*!
     @brief sends log of a fully formatted string, consuming the string.
+    @see logger_set_log_handler
 */
 int _logger_log(char* string);
 
-int logger_free();
+/*!
+    @brief free string and return -1. Use with logger_set_log_handler as a sentinel value. 
+*/
+int logger_log_null(char* string);
+
+int logger_free_ipc();
+int logger_free_file();
 
 #define LOGGER_MAKE_LOG(severity, group, ...) \
     _logger_make_log((severity), (group), __FILE__, __LINE__, __VA_ARGS__)
