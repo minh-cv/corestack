@@ -85,15 +85,9 @@ ClientIoResult client_unauthed_transit_write(int epoll_fd, struct ClientIo* c_ba
     return CLIENT_IO_OK;
 }
 
-static ClientIoVtable CLIENT_UNAUTHED_VTABLE = {
-    client_unauthed_transist_read,
-    client_unauthed_transit_write,
-};
-
 void client_unauthed_init(ClientUnauthed* c, int client_fd, TetrishCredential *credential) {
     client_io_init(&c->base, client_fd);
     client_io_transit_state(&c->base, CLIENT_READING_LEN, 1);
-    c->base.vptr = &CLIENT_UNAUTHED_VTABLE;
     c->credential = credential;
     c->auth_state = CLIENT_UNAUTHED_NONCE;
 }

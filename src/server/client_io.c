@@ -230,18 +230,18 @@ enum ClientIoResult handle_write(struct ClientIo *c) {
     return CLIENT_IO_CONTINUE;
 }
 
-enum ClientIoResult client_io_generic_entry(int epoll_fd, struct ClientIo* c) {
+enum ClientIoResult client_io_generic_entry(int epoll_fd, struct ClientIo* c, ClientIoResult (*transist_read)(int epoll_fd, struct ClientIo* c), ClientIoResult (*transist_write)(int epoll_fd, struct ClientIo* c)) {
     switch (c->state) {
     case CLIENT_READING_LEN:
         return handle_read_len(c);
     case CLIENT_READING_BODY:
         return handle_read_body(c);
     case CLIENT_READ_TRANSIT:
-        return c->vptr->transist_read(epoll_fd, c);
+        return transist_read(epoll_fd, c);
     case CLIENT_WRITING:
         return handle_write(c);
     case CLIENT_WRITE_TRANSIT:
-        return c->vptr->transist_write(epoll_fd, c);
+        return transist_write(epoll_fd, c);
     default:
         assert(false);
         return CLIENT_IO_ERR;

@@ -34,13 +34,7 @@ typedef enum ClientIoResult {
     CLIENT_IO_DONE, // for voluntarily closing
 } ClientIoResult;
 
-typedef struct ClientIoVtable {
-    enum ClientIoResult (*transist_read)(int epoll_fd, struct ClientIo* client_io);
-    enum ClientIoResult (*transist_write)(int epoll_fd, struct ClientIo* client_io);
-} ClientIoVtable;
-
 typedef struct ClientIo {
-    struct ClientIoVtable* vptr;
     int fd;
     enum ClientIoState state;
 
@@ -54,8 +48,6 @@ typedef struct ClientIo {
     unsigned int frame_active;
 } ClientIo;
 
-extern const struct ClientIo CLIENT_IO_DEFAULT;
-
 void frame_free(struct ClientIoFrame* frame);
 void client_io_pop_frame(struct ClientIo* c, unsigned int count);
 void client_io_push_frame(struct ClientIo* c, const struct ClientIoFrame frames[], unsigned int count);
@@ -64,7 +56,6 @@ struct ClientIoFrame* client_io_get_top_frame(struct ClientIo* c);
 struct ClientIoFrame* client_io_get_top_unused_frame(struct ClientIo* c);
 void client_io_free(struct ClientIo *c);
 void client_io_init(struct ClientIo *c, int client_fd);
-enum ClientIoResult client_io_generic_entry(int epoll_fd, struct ClientIo* c);
-
+enum ClientIoResult client_io_generic_entry(int epoll_fd, struct ClientIo* c, ClientIoResult (*transist_read)(int epoll_fd, struct ClientIo* c), ClientIoResult (*transist_write)(int epoll_fd, struct ClientIo* c));
 int mod_epoll_events(int epoll_fd, int fd, uint32_t events);
 #endif
