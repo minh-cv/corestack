@@ -23,7 +23,7 @@ target_include_directories(common PUBLIC include)
 target_link_libraries(common PUBLIC crypto)
 
 
-add_library(server src/server/client_io.c src/server/auth.c src/server/epollmanip.c)
+add_library(server src/server/client_io.c src/server/client_auth.c)
 target_include_directories(server PUBLIC src/server include)
 target_link_libraries(server PUBLIC tetrissh)
 target_compile_definitions(server PUBLIC

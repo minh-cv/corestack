@@ -4,13 +4,15 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-enum client_io_state {
+typedef enum ClientIoState {
     CLIENT_READING_LEN,
     CLIENT_READING_BODY,
+    CLIENT_READ_TRANSIT,
     CLIENT_WRITING,
-};
+    CLIENT_WRITE_TRANSIT,
+} ClientIoState;
 
-typedef struct frame {
+typedef struct ClientIoFrame {
     uint8_t len_buf[4];
     uint32_t len_used;
 
@@ -19,28 +21,50 @@ typedef struct frame {
     uint32_t used;
 
     bool is_heap_allocated;
-} frame;
+} ClientIoFrame;
 
 #define CLIENT_IO_MAX_FRAME 5
 
-struct client_io {
+struct ClientIo;
+
+typedef enum ClientIoResult {
+    CLIENT_IO_ERR,
+    CLIENT_IO_OK,
+    CLIENT_IO_CONTINUE,
+    CLIENT_IO_DONE, // for voluntarily closing
+} ClientIoResult;
+
+typedef struct ClientIoVtable {
+    enum ClientIoResult (*transist_read)(int epoll_fd, struct ClientIo* client_io);
+    enum ClientIoResult (*transist_write)(int epoll_fd, struct ClientIo* client_io);
+} ClientIoVtable;
+
+typedef struct ClientIo {
+    struct ClientIoVtable* vptr;
     int fd;
-    enum client_io_state state;
+    enum ClientIoState state;
 
     //! @brief a stack-like object containing frame, tracked by `frame_count`
-    frame frame[CLIENT_IO_MAX_FRAME];
+    ClientIoFrame frame[CLIENT_IO_MAX_FRAME];
 
     //! @brief the number of frame objects currently available
     unsigned int frame_count;
 
     //! @brief the number of frame objects left to read/write from
     unsigned int frame_active;
-};
+} ClientIo;
 
-void frame_free(struct frame* frame);
-void client_io_pop_frame(struct client_io* c, unsigned int count);
-void client_io_push_frame(struct client_io* c, const struct frame frames[], unsigned int count);
-void client_io_transit_state(struct client_io* c, enum client_io_state write_state, unsigned int frame_active);
-struct frame* client_io_get_top_frame(struct client_io* c);
+extern const struct ClientIo CLIENT_IO_DEFAULT;
 
+void frame_free(struct ClientIoFrame* frame);
+void client_io_pop_frame(struct ClientIo* c, unsigned int count);
+void client_io_push_frame(struct ClientIo* c, const struct ClientIoFrame frames[], unsigned int count);
+void client_io_transit_state(struct ClientIo* c, enum ClientIoState write_state, unsigned int frame_active);
+struct ClientIoFrame* client_io_get_top_frame(struct ClientIo* c);
+struct ClientIoFrame* client_io_get_top_unused_frame(struct ClientIo* c);
+void client_io_free(struct ClientIo *c);
+void client_io_init(struct ClientIo *c, int client_fd);
+enum ClientIoResult client_io_generic_entry(int epoll_fd, struct ClientIo* c);
+
+int mod_epoll_events(int epoll_fd, int fd, uint32_t events);
 #endif
