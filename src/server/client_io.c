@@ -7,7 +7,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/epoll.h>
 #include <errno.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -55,7 +54,7 @@ void client_io_transit_state(struct ClientIo* c, enum ClientIoState write_state,
         assert(frame_active <= c->frame_count);
     }
     else if (write_state == CLIENT_READING_BODY) {
-
+        assert(frame_active <= CLIENT_IO_MAX_FRAME - c->frame_count);
     }
     else {
         assert(frame_active == 0);
@@ -72,13 +71,6 @@ struct ClientIoFrame* client_io_get_top_frame(struct ClientIo* c) {
 struct ClientIoFrame* client_io_get_top_unused_frame(struct ClientIo* c) {
     assert(c->frame_count < CLIENT_IO_MAX_FRAME);
     return &c->frame[c->frame_count];
-}
-
-int mod_epoll_events(int epoll_fd, int fd, uint32_t events) {
-    struct epoll_event ev = {0};
-    ev.events = events;
-    ev.data.fd = fd;
-    return epoll_ctl(epoll_fd, EPOLL_CTL_MOD, fd, &ev);
 }
 
 void client_io_free(struct ClientIo *c) {
@@ -104,7 +96,7 @@ static enum ClientIoResult handle_read_len(struct ClientIo *c) {
         }
         if (n == -1) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                return CLIENT_IO_OK;
+                return CLIENT_IO_WOULDBLOCK;
             }
             if (errno == EINTR) {
                 continue;
@@ -154,7 +146,7 @@ static enum ClientIoResult handle_read_body(struct ClientIo* c) {
         }
         if (n == -1) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                return CLIENT_IO_OK;
+                return CLIENT_IO_WOULDBLOCK;
             }
             if (errno == EINTR) {
                 continue;
@@ -193,7 +185,7 @@ enum ClientIoResult handle_write(struct ClientIo *c) {
 
             if (n == -1) {
                 if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                    return CLIENT_IO_OK;
+                    return CLIENT_IO_WOULDBLOCK;
                 }
                 if (errno == EINTR) {
                     continue;
@@ -212,7 +204,7 @@ enum ClientIoResult handle_write(struct ClientIo *c) {
 
             if (n == -1) {
                 if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                    return CLIENT_IO_OK;
+                    return CLIENT_IO_WOULDBLOCK;
                 }
                 if (errno == EINTR) {
                     continue;
@@ -230,18 +222,18 @@ enum ClientIoResult handle_write(struct ClientIo *c) {
     return CLIENT_IO_CONTINUE;
 }
 
-enum ClientIoResult client_io_generic_entry(int epoll_fd, struct ClientIo* c, ClientIoResult (*transist_read)(int epoll_fd, struct ClientIo* c), ClientIoResult (*transist_write)(int epoll_fd, struct ClientIo* c)) {
+enum ClientIoResult client_io_generic_entry(struct ClientIo* c, ClientIoResult (*transist_read)(struct ClientIo* c), ClientIoResult (*transist_write)(struct ClientIo* c)) {
     switch (c->state) {
     case CLIENT_READING_LEN:
         return handle_read_len(c);
     case CLIENT_READING_BODY:
         return handle_read_body(c);
     case CLIENT_READ_TRANSIT:
-        return transist_read(epoll_fd, c);
+        return transist_read(c);
     case CLIENT_WRITING:
         return handle_write(c);
     case CLIENT_WRITE_TRANSIT:
-        return transist_write(epoll_fd, c);
+        return transist_write(c);
     default:
         assert(false);
         return CLIENT_IO_ERR;

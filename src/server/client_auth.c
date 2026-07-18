@@ -4,7 +4,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdlib.h>
-#include <sys/epoll.h>
 
 static int server_auth_nonce(struct ClientIo* c, TetrishCredential* credential) {
     assert(c->frame_count == 1);
@@ -50,16 +49,21 @@ static int server_auth_session_key(struct ClientIo* c, TetrishCredential* creden
     return 0;
 }
 
-ClientIoResult client_unauthed_transist_read(int epoll_fd, struct ClientIo* c_base) {
+ClientIoResult client_unauthed_transist_read(struct ClientIo* c_base) {
+    if (c_base->frame_count == CLIENT_UNAUTHED_START) {
+        client_io_transit_state(c_base, CLIENT_READING_LEN, 1);
+        return CLIENT_IO_CONTINUE;
+    }
+
     size_t diff = offsetof(ClientUnauthed, base);
     ClientUnauthed* c = (ClientUnauthed*)((char*)c_base - diff);
     if (c->auth_state == CLIENT_UNAUTHED_NONCE) {
-        if (server_auth_nonce(c_base, c->credential) == -1 || mod_epoll_events(epoll_fd, c_base->fd, EPOLLOUT | EPOLLRDHUP) == -1) {
+        if (server_auth_nonce(c_base, c->credential) == -1) {
             return CLIENT_IO_ERR;
         }
 
         client_io_transit_state(c_base, CLIENT_WRITING, 2);
-        return CLIENT_IO_OK;
+        return CLIENT_IO_CONTINUE;
     }
     if (c->auth_state == CLIENT_UNAUTHED_SYMKEY) {
         if (server_auth_session_key(c_base, c->credential, &c->key) == -1) {
@@ -71,25 +75,21 @@ ClientIoResult client_unauthed_transist_read(int epoll_fd, struct ClientIo* c_ba
     return CLIENT_IO_ERR;
 }
 
-ClientIoResult client_unauthed_transit_write(int epoll_fd, struct ClientIo* c_base) {
+ClientIoResult client_unauthed_transit_write(struct ClientIo* c_base) {
     size_t diff = offsetof(ClientUnauthed, base);
     ClientUnauthed* c = (ClientUnauthed*)((char*)c_base - diff);
     assert(c->auth_state == CLIENT_UNAUTHED_NONCE);
 
-    if (mod_epoll_events(epoll_fd, c_base->fd, EPOLLIN | EPOLLRDHUP) == -1) {
-        return CLIENT_IO_ERR;
-    }
-
     client_io_transit_state(c_base, CLIENT_READING_LEN, 1);
     c->auth_state = CLIENT_UNAUTHED_SYMKEY;
-    return CLIENT_IO_OK;
+    return CLIENT_IO_CONTINUE;
 }
 
 void client_unauthed_init(ClientUnauthed* c, int client_fd, TetrishCredential *credential) {
     client_io_init(&c->base, client_fd);
-    client_io_transit_state(&c->base, CLIENT_READING_LEN, 1);
+    client_io_transit_state(&c->base, CLIENT_READ_TRANSIT, 0);
     c->credential = credential;
-    c->auth_state = CLIENT_UNAUTHED_NONCE;
+    c->auth_state = CLIENT_UNAUTHED_START;
 }
 
 void client_unauthed_free(ClientUnauthed *c) {

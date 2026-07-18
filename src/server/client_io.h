@@ -29,7 +29,7 @@ struct ClientIo;
 
 typedef enum ClientIoResult {
     CLIENT_IO_ERR,
-    CLIENT_IO_OK,
+    CLIENT_IO_WOULDBLOCK,
     CLIENT_IO_CONTINUE,
     CLIENT_IO_CLOSE, // for manual closing
     CLIENT_IO_YIELD, // for extra operations that needs control from the server
@@ -57,6 +57,5 @@ struct ClientIoFrame* client_io_get_top_frame(struct ClientIo* c);
 struct ClientIoFrame* client_io_get_top_unused_frame(struct ClientIo* c);
 void client_io_free(struct ClientIo *c);
 void client_io_init(struct ClientIo *c, int client_fd);
-enum ClientIoResult client_io_generic_entry(int epoll_fd, struct ClientIo* c, ClientIoResult (*transist_read)(int epoll_fd, struct ClientIo* c), ClientIoResult (*transist_write)(int epoll_fd, struct ClientIo* c));
-int mod_epoll_events(int epoll_fd, int fd, uint32_t events);
+enum ClientIoResult client_io_generic_entry(struct ClientIo* c, ClientIoResult (*transist_read)(struct ClientIo* c), ClientIoResult (*transist_write)(struct ClientIo* c));
 #endif
