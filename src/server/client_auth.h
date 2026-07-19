@@ -7,7 +7,6 @@
 typedef struct ClientUnauthed {
     struct ClientIo base;
     enum ClientUnauthedAuthState {
-        CLIENT_UNAUTHED_START,
         CLIENT_UNAUTHED_NONCE,
         CLIENT_UNAUTHED_SYMKEY,
     } auth_state;

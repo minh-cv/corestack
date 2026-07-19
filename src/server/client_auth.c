@@ -52,13 +52,7 @@ static int server_auth_session_key(struct ClientIo* c, TetrishCredential* creden
 ClientIoResult client_unauthed_transist_read(struct ClientIo* c_base) {  
     size_t diff = offsetof(ClientUnauthed, base);
     ClientUnauthed* c = (ClientUnauthed*)((char*)c_base - diff);
-    
-    if (c->auth_state == CLIENT_UNAUTHED_START) {
-        client_io_transit_state(c_base, CLIENT_READING_LEN, 1);
-        c->auth_state = CLIENT_UNAUTHED_NONCE;
-        return CLIENT_IO_CONTINUE;
-    }
-    
+        
     if (c->auth_state == CLIENT_UNAUTHED_NONCE) {
         if (server_auth_nonce(c_base, c->credential) == -1) {
             return CLIENT_IO_ERR;
@@ -89,9 +83,9 @@ ClientIoResult client_unauthed_transit_write(struct ClientIo* c_base) {
 
 void client_unauthed_init(ClientUnauthed* c, int client_fd, TetrishCredential *credential) {
     client_io_init(&c->base, client_fd);
-    client_io_transit_state(&c->base, CLIENT_READ_TRANSIT, 0);
+    client_io_transit_state(&c->base, CLIENT_READING_LEN, 1);
     c->credential = credential;
-    c->auth_state = CLIENT_UNAUTHED_START;
+    c->auth_state = CLIENT_UNAUTHED_NONCE;
 }
 
 void client_unauthed_free(ClientUnauthed *c) {
