@@ -37,6 +37,16 @@ target_include_directories(server PUBLIC src/server include)
 target_link_libraries(server PUBLIC tetrissh client_io)
 
 
+add_library(log_buf src/server/log_buf.c)
+target_include_directories(log_buf PUBLIC src/server include)
+target_link_libraries(log_buf PUBLIC client_io)
+
+
+add_library(client_logger src/server/client_logger.c)
+target_include_directories(client_logger PUBLIC src/server include)
+target_link_libraries(client_logger PUBLIC client_io)
+
+
 add_library(daemon src/daemon/daemon.c)
 target_include_directories(daemon PUBLIC include)
 
@@ -60,6 +70,7 @@ install(
         config
         client_io
         server
+        client_logger
         daemon
         logger
     RUNTIME DESTINATION bin           # for executables (and DLLs on Windows)
