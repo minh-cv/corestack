@@ -28,11 +28,30 @@ typedef struct ClientIoFrame {
 struct ClientIo;
 
 typedef enum ClientIoResult {
+    /*!
+        @brief for errors. Should not need special case handling.
+    */
     CLIENT_IO_ERR,
+
+    /*!
+        @brief for read/write operations being blocked. This assumes that the state is in CLIENT_READING_* or CLIENT_WRITING, and has registered for EPOLLIN or EPOLLOUT (plus EPOLLRDHUP as "default"). Should not need special case handling.
+    */
     CLIENT_IO_WOULDBLOCK,
+
+    /*!
+        @brief for continuing to transit between read/write states, and between transit state and another read/write state. Should not need special case handling. 
+    */
     CLIENT_IO_CONTINUE,
-    CLIENT_IO_CLOSE, // for manual closing
-    CLIENT_IO_YIELD, // for extra operations that needs control from the server
+
+    /*!
+        @brief for voluntarily closing. Aside from logging-related, handled the same way as CLIENT_IO_ERR. Should not need special case handling.
+    */
+    CLIENT_IO_CLOSE,
+
+    /*!
+        @brief for returning control to the caller. Unlike CLIENT_IO_WOULDBLOCK, one cannot rely on being registered in EPOLLIN or EPOLLOUT. The caller must decide what to do next and when to continue (usually by manually calling transit_read or transit_write equivalent).
+    */
+    CLIENT_IO_YIELD,
 } ClientIoResult;
 
 typedef struct ClientIo {
