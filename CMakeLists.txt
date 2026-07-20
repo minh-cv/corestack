@@ -59,6 +59,10 @@ target_link_libraries(logger PUBLIC wire)
 add_library(tui src/tui/tui.c)
 target_include_directories(tui PUBLIC include)
 
+add_library(tuiui src/tuiui/tuiui.c)
+target_include_directories(tuiui PUBLIC include)
+target_link_libraries(tuiui PUBLIC tui)
+
 # add_executable(tetrisu src/tetrisu/main.c
 #     src/tetrisu/config_var.c)
 # target_include_directories(tetrisu PRIVATE src/tetrisu)
@@ -77,6 +81,7 @@ install(
         daemon
         logger
         tui
+        tuiui
     RUNTIME DESTINATION bin           # for executables (and DLLs on Windows)
     LIBRARY DESTINATION lib           # for shared libraries on Unix
     ARCHIVE DESTINATION lib           # for static libs (.a, .lib)
