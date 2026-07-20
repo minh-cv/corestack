@@ -34,7 +34,7 @@ typedef enum ClientIoResult {
     CLIENT_IO_ERR,
 
     /*!
-        @brief for read/write operations being blocked. This assumes that the state is in CLIENT_READING_* or CLIENT_WRITING, and has registered for EPOLLIN or EPOLLOUT (plus EPOLLRDHUP as "default"). Should not need special case handling.
+        @brief for operations that need no action from the server.
     */
     CLIENT_IO_WOULDBLOCK,
 
@@ -49,7 +49,7 @@ typedef enum ClientIoResult {
     CLIENT_IO_CLOSE,
 
     /*!
-        @brief for returning control to the caller. Unlike CLIENT_IO_WOULDBLOCK, one cannot rely on being registered in EPOLLIN or EPOLLOUT. The caller must decide what to do next and when to continue (usually by manually calling transit_read or transit_write equivalent).
+        @brief for returning control to the caller to do extra operations.
     */
     CLIENT_IO_YIELD,
 } ClientIoResult;
