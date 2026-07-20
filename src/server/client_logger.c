@@ -22,7 +22,7 @@ ClientIoResult client_logger_transist_write(struct ClientIo *c_base) {
 
     if (c->buf->buffer_size == 0) {
         client_io_transit_state(c_base, CLIENT_WRITE_TRANSIT, 0);
-        return CLIENT_IO_YIELD;
+        return CLIENT_IO_WOULDBLOCK;
     }
 
     unsigned int count = c->buf->buffer_size < CLIENT_IO_MAX_FRAME - c_base->frame_count ? (unsigned int)c->buf->buffer_size : CLIENT_IO_MAX_FRAME - c_base->frame_count;

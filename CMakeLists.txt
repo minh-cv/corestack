@@ -44,7 +44,7 @@ target_link_libraries(log_buf PUBLIC client_io)
 
 add_library(client_logger src/server/client_logger.c)
 target_include_directories(client_logger PUBLIC src/server include)
-target_link_libraries(client_logger PUBLIC client_io)
+target_link_libraries(client_logger PUBLIC client_io log_buf)
 
 
 add_library(daemon src/daemon/daemon.c)
