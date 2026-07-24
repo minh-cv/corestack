@@ -63,6 +63,9 @@ add_library(tuiui src/tuiui/tuiui.c)
 target_include_directories(tuiui PUBLIC include)
 target_link_libraries(tuiui PUBLIC tui)
 
+add_library(collection INTERFACE)
+target_include_directories(collection INTERFACE include)
+
 # add_executable(tetrisu src/tetrisu/main.c
 #     src/tetrisu/config_var.c)
 # target_include_directories(tetrisu PRIVATE src/tetrisu)
