@@ -1,8 +1,8 @@
 # Source guide
 
-This directory contains reusable C libraries for Tetrish. The current
-`CMakeLists.txt` builds library targets only; application entry points and the
-event loop that compose these pieces live outside this tree.
+This directory contains reusable C libraries and application entry points for
+Tetrish. The root `CMakeLists.txt` builds the libraries plus the minimal
+`draw_app` executable.
 
 Public declarations are in [`../include`](../include). Server-internal
 interfaces remain beside their implementations in [`server`](server).
@@ -28,6 +28,8 @@ flowchart LR
 
   Logger["logger/logger.c"] --> Wire
   TuiUi["tuiui/tuiui.c"] --> Tui["tui/tui.c"]
+  DrawApp["draw_app"] --> Tui
+  DrawApp --> Config
 
   Htttp["libhtttp/htttp.c"]
   Daemon["daemon/daemon.c"]
@@ -43,6 +45,7 @@ flowchart LR
 | [`config`](config/README.md) | `name=value` configuration loading and typed lookup | [`config.h`](../include/config.h) |
 | [`tui`](tui/README.md) | Raw terminal input and diff-based cell rendering | [`tui.h`](../include/tui.h) |
 | [`tuiui`](tuiui/README.md) | Retained pages, windows, controls, events, and drawing | [`tuiui.h`](../include/tuiui.h) |
+| [`draw_app`](draw_app/README.md) | F1-F9 page buffers, footer composition, and main loop | local [`app.h`](draw_app/app.h) |
 | [`daemon`](daemon/daemon.c) | Double-fork daemonization helper | [`daemon.h`](../include/daemon.h) |
 
 The tiny [`wire/wire.c`](wire/wire.c) is intentionally not expanded into its

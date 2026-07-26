@@ -95,6 +95,19 @@ typedef enum TuiKey {
     TUI_KEY_INSERT,
     TUI_KEY_DELETE,
 
+    TUI_KEY_F1,
+    TUI_KEY_F2,
+    TUI_KEY_F3,
+    TUI_KEY_F4,
+    TUI_KEY_F5,
+    TUI_KEY_F6,
+    TUI_KEY_F7,
+    TUI_KEY_F8,
+    TUI_KEY_F9,
+    TUI_KEY_F10,
+    TUI_KEY_F11,
+    TUI_KEY_F12,
+
     TUI_KEY_COUNT
 } TuiKey;
 
@@ -141,6 +154,18 @@ bool tui_char_down(char ch);
 bool tui_char_clicked(char ch);
 bool tui_char_repeated(char ch);
 int tui_char_count(char ch);
+
+/*
+ * Raw bytes copied from STDIN_FILENO before TUI input decoding.
+ *
+ * The ring persists across frames. Reading consumes bytes in arrival order;
+ * clearing discards unread bytes. If the fixed-capacity ring fills, the
+ * oldest bytes are overwritten and included in the dropped-byte count.
+ */
+size_t tui_stdin_available(void);
+size_t tui_stdin_read(void *dst, size_t capacity);
+void tui_stdin_clear(void);
+size_t tui_stdin_dropped(void);
 
 TuiMouseState tui_mouse(void);
 TgVec2i tui_mouse_pos(void);

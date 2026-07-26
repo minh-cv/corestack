@@ -13,6 +13,7 @@
 #include <unistd.h>
 
 #define TUI_INPUT_BUFFER_CAP 8192u
+#define TUI_STDIN_RING_CAP 8192u
 #define TUI_KEY_RELEASE_TIMEOUT_NS 180000000ll
 
 typedef struct TuiRenderState {
@@ -25,6 +26,16 @@ typedef struct TuiRenderState {
     uint32_t bg;
     bool attrs_valid;
 } TuiRenderState;
+
+typedef struct TuiFinalKeyMap {
+    unsigned char final;
+    TuiKey key;
+} TuiFinalKeyMap;
+
+typedef struct TuiNumberKeyMap {
+    int number;
+    TuiKey key;
+} TuiNumberKeyMap;
 
 static TgSizei g_size;
 static TuiCell *g_front_buffer;
@@ -39,6 +50,11 @@ static bool g_force_full_redraw;
 static uint8_t g_input_buffer[TUI_INPUT_BUFFER_CAP];
 static size_t g_input_len;
 
+static uint8_t g_stdin_ring[TUI_STDIN_RING_CAP];
+static size_t g_stdin_ring_head;
+static size_t g_stdin_ring_len;
+static size_t g_stdin_ring_dropped;
+
 static uint8_t g_key_count[TUI_KEY_COUNT];
 static bool g_key_down_state[TUI_KEY_COUNT];
 static bool g_key_clicked_state[TUI_KEY_COUNT];
@@ -52,6 +68,51 @@ static bool g_char_repeated_state[256];
 static int64_t g_char_last_seen_ns[256];
 
 static TuiMouseState g_mouse;
+
+static const TuiFinalKeyMap g_csi_final_keys[] = {
+    {'A', TUI_KEY_UP},
+    {'B', TUI_KEY_DOWN},
+    {'C', TUI_KEY_RIGHT},
+    {'D', TUI_KEY_LEFT},
+    {'H', TUI_KEY_HOME},
+    {'F', TUI_KEY_END},
+};
+
+static const TuiFinalKeyMap g_ss3_final_keys[] = {
+    {'A', TUI_KEY_UP},
+    {'B', TUI_KEY_DOWN},
+    {'C', TUI_KEY_RIGHT},
+    {'D', TUI_KEY_LEFT},
+    {'H', TUI_KEY_HOME},
+    {'F', TUI_KEY_END},
+    {'P', TUI_KEY_F1},
+    {'Q', TUI_KEY_F2},
+    {'R', TUI_KEY_F3},
+    {'S', TUI_KEY_F4},
+};
+
+static const TuiNumberKeyMap g_csi_number_keys[] = {
+    {1, TUI_KEY_HOME},
+    {2, TUI_KEY_INSERT},
+    {3, TUI_KEY_DELETE},
+    {4, TUI_KEY_END},
+    {5, TUI_KEY_PAGE_UP},
+    {6, TUI_KEY_PAGE_DOWN},
+    {7, TUI_KEY_HOME},
+    {8, TUI_KEY_END},
+    {11, TUI_KEY_F1},
+    {12, TUI_KEY_F2},
+    {13, TUI_KEY_F3},
+    {14, TUI_KEY_F4},
+    {15, TUI_KEY_F5},
+    {17, TUI_KEY_F6},
+    {18, TUI_KEY_F7},
+    {19, TUI_KEY_F8},
+    {20, TUI_KEY_F9},
+    {21, TUI_KEY_F10},
+    {23, TUI_KEY_F11},
+    {24, TUI_KEY_F12},
+};
 
 static int64_t tui_now_ns(void)
 {
@@ -113,6 +174,11 @@ static void tui_reset_input_state(void)
     memset(g_input_buffer, 0, sizeof(g_input_buffer));
     g_input_len = 0;
 
+    memset(g_stdin_ring, 0, sizeof(g_stdin_ring));
+    g_stdin_ring_head = 0;
+    g_stdin_ring_len = 0;
+    g_stdin_ring_dropped = 0;
+
     memset(g_key_count, 0, sizeof(g_key_count));
     memset(g_key_down_state, 0, sizeof(g_key_down_state));
     memset(g_key_clicked_state, 0, sizeof(g_key_clicked_state));
@@ -126,6 +192,53 @@ static void tui_reset_input_state(void)
     memset(g_char_last_seen_ns, 0, sizeof(g_char_last_seen_ns));
 
     memset(&g_mouse, 0, sizeof(g_mouse));
+}
+
+static void tui_stdin_push(const uint8_t *bytes, size_t count)
+{
+    if (bytes == NULL) {
+        return;
+    }
+
+    for (size_t i = 0; i < count; ++i) {
+        if (g_stdin_ring_len == TUI_STDIN_RING_CAP) {
+            g_stdin_ring_head = (g_stdin_ring_head + 1u) % TUI_STDIN_RING_CAP;
+            --g_stdin_ring_len;
+            if (g_stdin_ring_dropped < SIZE_MAX) {
+                ++g_stdin_ring_dropped;
+            }
+        }
+
+        size_t tail = (g_stdin_ring_head + g_stdin_ring_len) % TUI_STDIN_RING_CAP;
+        g_stdin_ring[tail] = bytes[i];
+        ++g_stdin_ring_len;
+    }
+}
+
+static TuiKey tui_lookup_final_key(
+    const TuiFinalKeyMap *map,
+    size_t map_count,
+    unsigned char final)
+{
+    for (size_t i = 0; i < map_count; ++i) {
+        if (map[i].final == final) {
+            return map[i].key;
+        }
+    }
+    return TUI_KEY_NONE;
+}
+
+static TuiKey tui_lookup_number_key(
+    const TuiNumberKeyMap *map,
+    size_t map_count,
+    int number)
+{
+    for (size_t i = 0; i < map_count; ++i) {
+        if (map[i].number == number) {
+            return map[i].key;
+        }
+    }
+    return TUI_KEY_NONE;
 }
 
 static bool tui_valid_key(TuiKey key)
@@ -363,55 +476,23 @@ static bool tui_parse_sgr_mouse(size_t start, size_t end, int64_t now_ns)
 
 static void tui_record_csi_key(int number, unsigned char final, int64_t now_ns)
 {
-    switch (final) {
-    case 'A':
-        tui_record_key(TUI_KEY_UP, now_ns);
-        return;
-    case 'B':
-        tui_record_key(TUI_KEY_DOWN, now_ns);
-        return;
-    case 'C':
-        tui_record_key(TUI_KEY_RIGHT, now_ns);
-        return;
-    case 'D':
-        tui_record_key(TUI_KEY_LEFT, now_ns);
-        return;
-    case 'H':
-        tui_record_key(TUI_KEY_HOME, now_ns);
-        return;
-    case 'F':
-        tui_record_key(TUI_KEY_END, now_ns);
-        return;
-    case '~':
-        break;
-    default:
-        return;
+    TuiKey key = TUI_KEY_NONE;
+    if (final == '~') {
+        key = tui_lookup_number_key(
+            g_csi_number_keys,
+            sizeof(g_csi_number_keys) / sizeof(g_csi_number_keys[0]),
+            number);
+    } else {
+        key = tui_lookup_final_key(
+            g_csi_final_keys,
+            sizeof(g_csi_final_keys) / sizeof(g_csi_final_keys[0]),
+            final);
     }
 
-    switch (number) {
-    case 1:
-    case 7:
-        tui_record_key(TUI_KEY_HOME, now_ns);
-        break;
-    case 2:
-        tui_record_key(TUI_KEY_INSERT, now_ns);
-        break;
-    case 3:
-        tui_record_key(TUI_KEY_DELETE, now_ns);
-        break;
-    case 4:
-    case 8:
-        tui_record_key(TUI_KEY_END, now_ns);
-        break;
-    case 5:
-        tui_record_key(TUI_KEY_PAGE_UP, now_ns);
-        break;
-    case 6:
-        tui_record_key(TUI_KEY_PAGE_DOWN, now_ns);
-        break;
-    default:
-        break;
+    if (key == TUI_KEY_NONE) {
+        return;
     }
+    tui_record_key(key, now_ns);
 }
 
 static bool tui_parse_escape(size_t start, size_t *out_consumed, int64_t now_ns)
@@ -425,15 +506,12 @@ static bool tui_parse_escape(size_t start, size_t *out_consumed, int64_t now_ns)
             return false;
         }
 
-        switch (g_input_buffer[start + 2]) {
-        case 'H':
-            tui_record_key(TUI_KEY_HOME, now_ns);
-            break;
-        case 'F':
-            tui_record_key(TUI_KEY_END, now_ns);
-            break;
-        default:
-            break;
+        TuiKey key = tui_lookup_final_key(
+            g_ss3_final_keys,
+            sizeof(g_ss3_final_keys) / sizeof(g_ss3_final_keys[0]),
+            g_input_buffer[start + 2]);
+        if (key != TUI_KEY_NONE) {
+            tui_record_key(key, now_ns);
         }
         *out_consumed = 3;
         return true;
@@ -540,6 +618,7 @@ static void tui_poll_input(void)
                              g_input_buffer + g_input_len,
                              TUI_INPUT_BUFFER_CAP - g_input_len);
         if (nread > 0) {
+            tui_stdin_push(g_input_buffer + g_input_len, (size_t)nread);
             g_input_len += (size_t)nread;
             continue;
         }
@@ -897,6 +976,41 @@ bool tui_char_repeated(char ch)
 int tui_char_count(char ch)
 {
     return g_char_count[(unsigned char)ch];
+}
+
+size_t tui_stdin_available(void)
+{
+    return g_stdin_ring_len;
+}
+
+size_t tui_stdin_read(void *dst, size_t capacity)
+{
+    if (dst == NULL || capacity == 0) {
+        return 0;
+    }
+
+    size_t count = capacity < g_stdin_ring_len ? capacity : g_stdin_ring_len;
+    uint8_t *out = dst;
+    for (size_t i = 0; i < count; ++i) {
+        out[i] = g_stdin_ring[g_stdin_ring_head];
+        g_stdin_ring_head = (g_stdin_ring_head + 1u) % TUI_STDIN_RING_CAP;
+    }
+    g_stdin_ring_len -= count;
+    if (g_stdin_ring_len == 0) {
+        g_stdin_ring_head = 0;
+    }
+    return count;
+}
+
+void tui_stdin_clear(void)
+{
+    g_stdin_ring_head = 0;
+    g_stdin_ring_len = 0;
+}
+
+size_t tui_stdin_dropped(void)
+{
+    return g_stdin_ring_dropped;
 }
 
 TuiMouseState tui_mouse(void)

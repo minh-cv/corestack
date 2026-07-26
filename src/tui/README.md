@@ -24,14 +24,20 @@ signals so the user's terminal is not left in raw mode.
 
 ## Input
 
-`tui_present` reads currently available stdin bytes into an 8192-byte buffer
-and parses:
+`tui_present` reads currently available stdin bytes into an 8192-byte decoder
+buffer. Every successful read is also copied into an independent 8192-byte
+raw stdin ring before decoding. The decoder recognizes:
 
 - Enter, tab, backspace, space, and escape.
 - Arrow, home, end, insert, delete, page-up, and page-down CSI sequences.
+- F1-F12 in the common SS3 and numbered CSI forms.
 - Printable ASCII character presses.
 - SGR mouse position, press, release, drag, and horizontal/vertical wheel
   events.
+
+Special-key decoding is table-driven: one table maps direct CSI final bytes,
+one maps SS3 final bytes, and one maps numbered `CSI ... ~` forms. This keeps
+the supported-key list separate from parsing control flow.
 
 Per-frame `clicked`, `repeated`, counts, mouse movement, wheel, and release
 fields are reset before polling. Terminals do not normally send key-up events,
@@ -39,6 +45,20 @@ so `down` state expires when a key has not been observed for 180 ms.
 
 Incomplete escape sequences are not retained for a later poll; a trailing
 unmatched escape is recorded as Escape during the current poll.
+
+### Raw stdin copy
+
+The raw ring is separate from the decoder buffer, so consuming or clearing it
+does not change key, character, or mouse decoding:
+
+- `tui_stdin_available()` returns the unread byte count.
+- `tui_stdin_read(dst, capacity)` consumes bytes in arrival order.
+- `tui_stdin_clear()` discards unread bytes.
+- `tui_stdin_dropped()` reports how many bytes were overwritten.
+
+The ring persists across frames. When full, a new byte replaces the oldest
+unread byte and increments the dropped count. All ring state is reset by
+`tui_init`/`tui_shutdown`.
 
 ## Cell buffers and rendering
 
