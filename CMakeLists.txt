@@ -68,6 +68,7 @@ add_executable(draw_app
     src/draw_app/main.c
     src/draw_app/app.c
     src/draw_app/canvas.c
+    src/draw_app/canvas_state.c
     src/draw_app/canvas_page.c
     src/draw_app/pages.c)
 target_include_directories(draw_app PRIVATE src/draw_app)
@@ -76,7 +77,8 @@ target_link_libraries(draw_app PRIVATE tui config)
 if(BUILD_TESTING)
     add_executable(draw_canvas_test
         src/draw_app/canvas_test.c
-        src/draw_app/canvas.c)
+        src/draw_app/canvas.c
+        src/draw_app/canvas_state.c)
     target_include_directories(draw_canvas_test PRIVATE src/draw_app include)
     add_test(NAME draw_canvas_test COMMAND draw_canvas_test)
 endif()
