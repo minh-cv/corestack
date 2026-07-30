@@ -1,6 +1,7 @@
 bin/
 lib/
 build/
+build_tests/
 var/
 auth/*.crt
 !auth/cacsertificate.crt
@@ -13,3 +14,4 @@ tmp/
 compile_commands.json
 .tetrishrc
 archive/
+*autosave.xopp
