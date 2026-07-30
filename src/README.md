@@ -45,7 +45,7 @@ flowchart LR
 | [`config`](config/README.md) | `name=value` configuration loading and typed lookup | [`config.h`](../include/config.h) |
 | [`tui`](tui/README.md) | Raw terminal input and diff-based cell rendering | [`tui.h`](../include/tui.h) |
 | [`tuiui`](tuiui/README.md) | Retained pages, windows, controls, events, and drawing | [`tuiui.h`](../include/tuiui.h) |
-| [`draw_app`](draw_app/README.md) | F1-F9 page buffers, footer composition, and main loop | local [`app.h`](draw_app/app.h) |
+| [`draw_app`](draw_app/docs/README.md) | Page lifecycle, F2 canvas history, palette, and footer composition | local [`app.h`](draw_app/app.h) |
 | [`daemon`](daemon/daemon.c) | Double-fork daemonization helper | [`daemon.h`](../include/daemon.h) |
 
 The tiny [`wire/wire.c`](wire/wire.c) is intentionally not expanded into its

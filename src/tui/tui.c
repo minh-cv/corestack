@@ -14,6 +14,7 @@
 
 #define TUI_INPUT_BUFFER_CAP 8192u
 #define TUI_STDIN_RING_CAP 8192u
+#define TUI_INPUT_EVENT_CAP 1024u
 #define TUI_KEY_RELEASE_TIMEOUT_NS 180000000ll
 
 typedef struct TuiRenderState {
@@ -46,6 +47,7 @@ static int g_saved_stdin_flags;
 
 static bool g_initialized;
 static bool g_force_full_redraw;
+static bool g_input_polled_since_present;
 
 static uint8_t g_input_buffer[TUI_INPUT_BUFFER_CAP];
 static size_t g_input_len;
@@ -68,6 +70,9 @@ static bool g_char_repeated_state[256];
 static int64_t g_char_last_seen_ns[256];
 
 static TuiMouseState g_mouse;
+static TuiInputEvent g_input_events[TUI_INPUT_EVENT_CAP];
+static size_t g_input_event_count;
+static size_t g_input_events_dropped;
 
 static const TuiFinalKeyMap g_csi_final_keys[] = {
     {'A', TUI_KEY_UP},
@@ -192,6 +197,21 @@ static void tui_reset_input_state(void)
     memset(g_char_last_seen_ns, 0, sizeof(g_char_last_seen_ns));
 
     memset(&g_mouse, 0, sizeof(g_mouse));
+    memset(g_input_events, 0, sizeof(g_input_events));
+    g_input_event_count = 0;
+    g_input_events_dropped = 0;
+    g_input_polled_since_present = false;
+}
+
+static void tui_push_event(TuiInputEvent event)
+{
+    if (g_input_event_count >= TUI_INPUT_EVENT_CAP) {
+        if (g_input_events_dropped < SIZE_MAX) {
+            ++g_input_events_dropped;
+        }
+        return;
+    }
+    g_input_events[g_input_event_count++] = event;
 }
 
 static void tui_stdin_push(const uint8_t *bytes, size_t count)
@@ -253,6 +273,8 @@ static bool tui_valid_button(TuiMouseButton button)
 
 static void tui_begin_input_frame(void)
 {
+    g_input_event_count = 0;
+
     memset(g_key_count, 0, sizeof(g_key_count));
     memset(g_key_clicked_state, 0, sizeof(g_key_clicked_state));
     memset(g_key_repeated_state, 0, sizeof(g_key_repeated_state));
@@ -267,6 +289,26 @@ static void tui_begin_input_frame(void)
     memset(g_mouse.dragged, 0, sizeof(g_mouse.dragged));
     g_mouse.wheel_x = 0;
     g_mouse.wheel_y = 0;
+}
+
+static uint8_t tui_xterm_modifiers(int parameter)
+{
+    if (parameter <= 1) {
+        return TUI_MOD_NONE;
+    }
+
+    unsigned encoded = (unsigned)(parameter - 1);
+    uint8_t modifiers = TUI_MOD_NONE;
+    if ((encoded & 1u) != 0) {
+        modifiers |= TUI_MOD_SHIFT;
+    }
+    if ((encoded & 2u) != 0) {
+        modifiers |= TUI_MOD_ALT;
+    }
+    if ((encoded & 4u) != 0) {
+        modifiers |= TUI_MOD_CONTROL;
+    }
+    return modifiers;
 }
 
 static void tui_release_idle_keys(int64_t now_ns)
@@ -292,7 +334,7 @@ static void tui_release_idle_keys(int64_t now_ns)
     }
 }
 
-static void tui_record_key(TuiKey key, int64_t now_ns)
+static void tui_record_key(TuiKey key, uint8_t modifiers, int64_t now_ns)
 {
     if (!tui_valid_key(key)) {
         return;
@@ -310,6 +352,13 @@ static void tui_record_key(TuiKey key, int64_t now_ns)
 
     g_key_down_state[key] = true;
     g_key_last_seen_ns[key] = now_ns;
+
+    TuiInputEvent event;
+    memset(&event, 0, sizeof(event));
+    event.type = TUI_INPUT_KEY;
+    event.modifiers = modifiers;
+    event.key = key;
+    tui_push_event(event);
 }
 
 static void tui_record_char(unsigned char ch, int64_t now_ns)
@@ -326,6 +375,22 @@ static void tui_record_char(unsigned char ch, int64_t now_ns)
 
     g_char_down_state[ch] = true;
     g_char_last_seen_ns[ch] = now_ns;
+
+    TuiInputEvent event;
+    memset(&event, 0, sizeof(event));
+    event.type = TUI_INPUT_TEXT;
+    event.ch = ch;
+    tui_push_event(event);
+}
+
+static void tui_record_control_char(unsigned char ch)
+{
+    TuiInputEvent event;
+    memset(&event, 0, sizeof(event));
+    event.type = TUI_INPUT_KEY;
+    event.modifiers = TUI_MOD_CONTROL;
+    event.ch = ch;
+    tui_push_event(event);
 }
 
 static void tui_record_mouse_position(int x, int y)
@@ -357,24 +422,51 @@ static void tui_record_mouse_event(int code, int x1, int y1, char final)
     bool motion = (code & 32) != 0;
     bool wheel = (code & 64) != 0;
     int button = code & 3;
+    uint8_t modifiers = TUI_MOD_NONE;
+    if ((code & 4) != 0) {
+        modifiers |= TUI_MOD_SHIFT;
+    }
+    if ((code & 8) != 0) {
+        modifiers |= TUI_MOD_ALT;
+    }
+    if ((code & 16) != 0) {
+        modifiers |= TUI_MOD_CONTROL;
+    }
 
     if (wheel && !release) {
+        int wheel_x = 0;
+        int wheel_y = 0;
         switch (button) {
         case 0:
             ++g_mouse.wheel_y;
+            wheel_y = 1;
             break;
         case 1:
             --g_mouse.wheel_y;
+            wheel_y = -1;
             break;
         case 2:
             --g_mouse.wheel_x;
+            wheel_x = -1;
             break;
         case 3:
             ++g_mouse.wheel_x;
+            wheel_x = 1;
             break;
         default:
             break;
         }
+
+        TuiInputEvent event;
+        memset(&event, 0, sizeof(event));
+        event.type = TUI_INPUT_MOUSE;
+        event.modifiers = modifiers;
+        event.mouse.action = TUI_MOUSE_WHEEL;
+        event.mouse.x = x;
+        event.mouse.y = y;
+        event.mouse.wheel_x = wheel_x;
+        event.mouse.wheel_y = wheel_y;
+        tui_push_event(event);
         return;
     }
 
@@ -384,10 +476,30 @@ static void tui_record_mouse_event(int code, int x1, int y1, char final)
                 g_mouse.released[button] = true;
             }
             g_mouse.down[button] = false;
+
+            TuiInputEvent event;
+            memset(&event, 0, sizeof(event));
+            event.type = TUI_INPUT_MOUSE;
+            event.modifiers = modifiers;
+            event.mouse.action = TUI_MOUSE_RELEASE;
+            event.mouse.x = x;
+            event.mouse.y = y;
+            event.mouse.button = (TuiMouseButton)button;
+            tui_push_event(event);
         } else {
             for (int i = 0; i < TUI_MOUSE_BUTTON_COUNT; ++i) {
                 if (g_mouse.down[i]) {
                     g_mouse.released[i] = true;
+
+                    TuiInputEvent event;
+                    memset(&event, 0, sizeof(event));
+                    event.type = TUI_INPUT_MOUSE;
+                    event.modifiers = modifiers;
+                    event.mouse.action = TUI_MOUSE_RELEASE;
+                    event.mouse.x = x;
+                    event.mouse.y = y;
+                    event.mouse.button = (TuiMouseButton)i;
+                    tui_push_event(event);
                 }
                 g_mouse.down[i] = false;
             }
@@ -402,6 +514,16 @@ static void tui_record_mouse_event(int code, int x1, int y1, char final)
     if (motion) {
         if (g_mouse.down[button] && (old_x != x || old_y != y)) {
             g_mouse.dragged[button] = true;
+
+            TuiInputEvent event;
+            memset(&event, 0, sizeof(event));
+            event.type = TUI_INPUT_MOUSE;
+            event.modifiers = modifiers;
+            event.mouse.action = TUI_MOUSE_DRAG;
+            event.mouse.x = x;
+            event.mouse.y = y;
+            event.mouse.button = (TuiMouseButton)button;
+            tui_push_event(event);
         }
         return;
     }
@@ -410,6 +532,16 @@ static void tui_record_mouse_event(int code, int x1, int y1, char final)
         g_mouse.clicked[button] = true;
     }
     g_mouse.down[button] = true;
+
+    TuiInputEvent event;
+    memset(&event, 0, sizeof(event));
+    event.type = TUI_INPUT_MOUSE;
+    event.modifiers = modifiers;
+    event.mouse.action = TUI_MOUSE_PRESS;
+    event.mouse.x = x;
+    event.mouse.y = y;
+    event.mouse.button = (TuiMouseButton)button;
+    tui_push_event(event);
 }
 
 static bool tui_is_csi_final(unsigned char ch)
@@ -474,7 +606,11 @@ static bool tui_parse_sgr_mouse(size_t start, size_t end, int64_t now_ns)
     return true;
 }
 
-static void tui_record_csi_key(int number, unsigned char final, int64_t now_ns)
+static void tui_record_csi_key(
+    int number,
+    int modifier,
+    unsigned char final,
+    int64_t now_ns)
 {
     TuiKey key = TUI_KEY_NONE;
     if (final == '~') {
@@ -487,12 +623,18 @@ static void tui_record_csi_key(int number, unsigned char final, int64_t now_ns)
             g_csi_final_keys,
             sizeof(g_csi_final_keys) / sizeof(g_csi_final_keys[0]),
             final);
+        if (key == TUI_KEY_NONE && number == 1) {
+            key = tui_lookup_final_key(
+                g_ss3_final_keys,
+                sizeof(g_ss3_final_keys) / sizeof(g_ss3_final_keys[0]),
+                final);
+        }
     }
 
     if (key == TUI_KEY_NONE) {
         return;
     }
-    tui_record_key(key, now_ns);
+    tui_record_key(key, tui_xterm_modifiers(modifier), now_ns);
 }
 
 static bool tui_parse_escape(size_t start, size_t *out_consumed, int64_t now_ns)
@@ -511,14 +653,14 @@ static bool tui_parse_escape(size_t start, size_t *out_consumed, int64_t now_ns)
             sizeof(g_ss3_final_keys) / sizeof(g_ss3_final_keys[0]),
             g_input_buffer[start + 2]);
         if (key != TUI_KEY_NONE) {
-            tui_record_key(key, now_ns);
+            tui_record_key(key, TUI_MOD_NONE, now_ns);
         }
         *out_consumed = 3;
         return true;
     }
 
     if (g_input_buffer[start + 1] != '[') {
-        tui_record_key(TUI_KEY_ESCAPE, now_ns);
+        tui_record_key(TUI_KEY_ESCAPE, TUI_MOD_NONE, now_ns);
         *out_consumed = 1;
         return true;
     }
@@ -536,19 +678,24 @@ static bool tui_parse_escape(size_t start, size_t *out_consumed, int64_t now_ns)
 
     if (g_input_buffer[start + 2] == '<' && (final == 'M' || final == 'm')) {
         if (!tui_parse_sgr_mouse(start, end + 1, now_ns)) {
-            tui_record_key(TUI_KEY_ESCAPE, now_ns);
+            tui_record_key(TUI_KEY_ESCAPE, TUI_MOD_NONE, now_ns);
         }
         *out_consumed = consumed;
         return true;
     }
 
     int number = 0;
+    int modifier = 1;
     size_t index = start + 2;
     if (index < end && g_input_buffer[index] >= '0' && g_input_buffer[index] <= '9') {
         (void)tui_parse_unsigned(g_input_buffer, end, &index, &number);
+        if (index < end && g_input_buffer[index] == ';') {
+            ++index;
+            (void)tui_parse_unsigned(g_input_buffer, end, &index, &modifier);
+        }
     }
 
-    tui_record_csi_key(number, final, now_ns);
+    tui_record_csi_key(number, modifier, final, now_ns);
     *out_consumed = consumed;
     return true;
 }
@@ -566,7 +713,7 @@ static void tui_parse_input_buffer(int64_t now_ns)
                 continue;
             }
 
-            tui_record_key(TUI_KEY_ESCAPE, now_ns);
+            tui_record_key(TUI_KEY_ESCAPE, TUI_MOD_NONE, now_ns);
             ++read_index;
             continue;
         }
@@ -574,22 +721,24 @@ static void tui_parse_input_buffer(int64_t now_ns)
         switch (ch) {
         case '\r':
         case '\n':
-            tui_record_key(TUI_KEY_ENTER, now_ns);
+            tui_record_key(TUI_KEY_ENTER, TUI_MOD_NONE, now_ns);
             break;
         case '\t':
-            tui_record_key(TUI_KEY_TAB, now_ns);
+            tui_record_key(TUI_KEY_TAB, TUI_MOD_NONE, now_ns);
             break;
         case '\b':
         case 0x7f:
-            tui_record_key(TUI_KEY_BACKSPACE, now_ns);
+            tui_record_key(TUI_KEY_BACKSPACE, TUI_MOD_NONE, now_ns);
             break;
         case ' ':
-            tui_record_key(TUI_KEY_SPACE, now_ns);
+            tui_record_key(TUI_KEY_SPACE, TUI_MOD_NONE, now_ns);
             tui_record_char(ch, now_ns);
             break;
         default:
             if (ch >= 32 && ch < 127) {
                 tui_record_char(ch, now_ns);
+            } else if (ch >= 1 && ch <= 26) {
+                tui_record_control_char((unsigned char)('a' + ch - 1));
             }
             break;
         }
@@ -925,14 +1074,43 @@ void tui_clear(void)
     tui_fill_buffer(g_back_buffer);
 }
 
+TgResult tui_poll_events(void)
+{
+    if (!g_initialized) {
+        return TG_ERR_INVALID;
+    }
+    tui_poll_input();
+    g_input_polled_since_present = true;
+    return TG_OK;
+}
+
 TgResult tui_present(void)
 {
     if (!g_initialized) {
         return TG_ERR_INVALID;
     }
 
-    tui_poll_input();
-    return tui_render();
+    if (!g_input_polled_since_present) {
+        tui_poll_input();
+    }
+    TgResult result = tui_render();
+    g_input_polled_since_present = false;
+    return result;
+}
+
+size_t tui_input_event_count(void)
+{
+    return g_input_event_count;
+}
+
+const TuiInputEvent *tui_input_events(void)
+{
+    return g_input_events;
+}
+
+size_t tui_input_events_dropped(void)
+{
+    return g_input_events_dropped;
 }
 
 bool tui_key_down(TuiKey key)

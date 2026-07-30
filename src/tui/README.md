@@ -24,16 +24,23 @@ signals so the user's terminal is not left in raw mode.
 
 ## Input
 
-`tui_present` reads currently available stdin bytes into an 8192-byte decoder
-buffer. Every successful read is also copied into an independent 8192-byte
-raw stdin ring before decoding. The decoder recognizes:
+`tui_poll_events` reads currently available stdin bytes into an 8192-byte
+decoder buffer. Every successful read is also copied into an independent
+8192-byte raw stdin ring before decoding. `tui_present` renders the current
+back buffer; for compatibility it also polls when the caller has not already
+polled since the previous presentation. The decoder recognizes:
 
 - Enter, tab, backspace, space, and escape.
 - Arrow, home, end, insert, delete, page-up, and page-down CSI sequences.
 - F1-F12 in the common SS3 and numbered CSI forms.
 - Printable ASCII character presses.
+- Control-modified letter events and xterm modifier parameters.
 - SGR mouse position, press, release, drag, and horizontal/vertical wheel
   events.
+
+Decoded input is also exposed as an ordered per-frame `TuiInputEvent` array.
+Text, key, and mouse events are distinct, so mouse escape sequences cannot be
+mistaken for typed text. Modifier flags include Shift, Alt, and Control.
 
 Special-key decoding is table-driven: one table maps direct CSI final bytes,
 one maps SS3 final bytes, and one maps numbered `CSI ... ~` forms. This keeps

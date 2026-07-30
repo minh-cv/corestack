@@ -133,6 +133,44 @@ typedef struct TuiMouseState {
     int wheel_y;
 } TuiMouseState;
 
+typedef enum TuiModifier {
+    TUI_MOD_NONE = 0,
+    TUI_MOD_SHIFT = 1u << 0,
+    TUI_MOD_ALT = 1u << 1,
+    TUI_MOD_CONTROL = 1u << 2
+} TuiModifier;
+
+typedef enum TuiInputEventType {
+    TUI_INPUT_KEY = 0,
+    TUI_INPUT_TEXT,
+    TUI_INPUT_MOUSE
+} TuiInputEventType;
+
+typedef enum TuiMouseAction {
+    TUI_MOUSE_MOVE = 0,
+    TUI_MOUSE_PRESS,
+    TUI_MOUSE_RELEASE,
+    TUI_MOUSE_DRAG,
+    TUI_MOUSE_WHEEL
+} TuiMouseAction;
+
+typedef struct TuiMouseEvent {
+    TuiMouseAction action;
+    int x;
+    int y;
+    TuiMouseButton button;
+    int wheel_x;
+    int wheel_y;
+} TuiMouseEvent;
+
+typedef struct TuiInputEvent {
+    TuiInputEventType type;
+    uint8_t modifiers;
+    TuiKey key;
+    unsigned char ch;
+    TuiMouseEvent mouse;
+} TuiInputEvent;
+
 TgResult tui_init(TgSizei size);
 void tui_shutdown(void);
 
@@ -143,7 +181,12 @@ TgSizei tui_size(void);
 TuiCell *tui_get_buffer(void);
 
 void tui_clear(void);
+TgResult tui_poll_events(void);
 TgResult tui_present(void);
+
+size_t tui_input_event_count(void);
+const TuiInputEvent *tui_input_events(void);
+size_t tui_input_events_dropped(void);
 
 bool tui_key_down(TuiKey key);
 bool tui_key_clicked(TuiKey key);
