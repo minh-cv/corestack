@@ -1,9 +1,12 @@
 cmake_minimum_required(VERSION 3.10)
 project(tetrish LANGUAGES C)
 
-
 add_compile_options(-g -Wall -Wextra -Wpedantic -Wconversion -Wno-strict-prototypes)
 
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    enable_testing()
+    add_subdirectory(test)
+endif()
 
 add_library(htttp src/libhtttp/htttp.c)
 target_include_directories(htttp PUBLIC include)
