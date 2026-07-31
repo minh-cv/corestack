@@ -1,47 +1,44 @@
-#ifndef TETRISH_HTTTP_H
-#define TETRISH_HTTTP_H
+#ifndef CORESTACK_HTTTP_H
+#define CORESTACK_HTTTP_H
 
+#include <stdbool.h>
 #include <stddef.h>
-
-#define HTTTP_MAX_MESSAGE (64U * 1024U)
-#define HTTTP_MAX_HEADERS 32
-#define HTTTP_MAX_METHOD 16
-#define HTTTP_MAX_PATH 256
-#define HTTTP_MAX_REASON 64
-#define HTTTP_MAX_HEADER_NAME 64
-#define HTTTP_MAX_HEADER_VALUE 256
-
-typedef enum {
-    HTTTP_REQUEST = 1,
-    HTTTP_RESPONSE = 2
-} htttp_kind_t;
+#define HTTTP_HEADER_MAX 32
 
 typedef struct {
-    char name[HTTTP_MAX_HEADER_NAME];
-    char value[HTTTP_MAX_HEADER_VALUE];
-} htttp_header_t;
+    const char* key;
+    const char* value;
+} HtttpHeader;
 
 typedef struct {
-    htttp_kind_t kind;
-    char method[HTTTP_MAX_METHOD];
-    char path[HTTTP_MAX_PATH];
-    int status;
-    char reason[HTTTP_MAX_REASON];
-    htttp_header_t headers[HTTTP_MAX_HEADERS];
+    const char* method;
+    const char* path;
+    HtttpHeader header[HTTTP_HEADER_MAX];
     size_t header_count;
-    unsigned char *body;
-    size_t body_length;
-} htttp_message_t;
+    const unsigned char* body;
+    size_t body_len;
+} HtttpRequest;
 
-void htttp_message_init(htttp_message_t *message);
-void htttp_message_free(htttp_message_t *message);
-int htttp_add_header(htttp_message_t *message, const char *name, const char *value);
-const char *htttp_get_header(const htttp_message_t *message, const char *name);
-int htttp_set_body(htttp_message_t *message, const void *body, size_t length);
-int htttp_parse(const unsigned char *buffer, size_t length, htttp_message_t *message);
-int htttp_serialize(const htttp_message_t *message, unsigned char **buffer, size_t *length);
-int htttp_make_response(htttp_message_t *message, int status, const char *reason,
-                        const char *body, const char *content_type);
+typedef struct {
+    int status;
+    const char* reason;
+    HtttpHeader header[HTTTP_HEADER_MAX];
+    size_t header_count;
+    const unsigned char* body;
+    size_t body_len;
+} HtttpResponse;
+
+typedef struct {
+    union {
+        HtttpRequest request;
+        HtttpResponse response;
+    };
+    bool is_request;
+} HtttpMessage;
+
+int htttp_parse(unsigned char* buffer, size_t buffer_size, HtttpMessage* msg);
+unsigned char* htttp_serialize(const HtttpMessage* msg, size_t* buffer_size);
+int htttp_make_rfc_1123_date(char (*buf)[60]);
+const char* htttp_get_header(const HtttpMessage* msg, const char* key);
 
 #endif
-
