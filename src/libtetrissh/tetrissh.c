@@ -1,6 +1,8 @@
 #include "tetrissh.h"
+#include "common.h"
 #include "dtor.h"
 #include <openssl/evp.h>
+#include <openssl/rand.h>
 #include <sched.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -107,11 +109,11 @@ static int recv_uint32_t(int sockfd, uint32_t* value) {
 int tetrish_client_handshake(int sockfd, const char* ca_path, SessionKey* session_key) {
     DTOR_DEFINE(dtor, 10);
 
-    unsigned char nonce_buf[SESSION_KEY_LEN];    
+    unsigned char nonce_buf[NONCE_LEN];    
     if (
-        generate_session_key(nonce_buf) == -1 || 
-        send_uint32_t(sockfd, SESSION_KEY_LEN) == -1 ||
-        send_all(sockfd, nonce_buf, SESSION_KEY_LEN) == -1) {
+        RAND_bytes(nonce_buf, NONCE_LEN) != 1 || 
+        send_uint32_t(sockfd, NONCE_LEN) == -1 ||
+        send_all(sockfd, nonce_buf, NONCE_LEN) == -1) {
             DTOR_RETURN(dtor, -1);
         }
     

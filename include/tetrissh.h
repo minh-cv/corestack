@@ -6,6 +6,8 @@
 #include <openssl/types.h>
 #include <stdint.h>
 
+#define NONCE_LEN 32
+
 typedef struct TetrishCredential {
     EVP_PKEY* private_key;
     unsigned char* certificate;
