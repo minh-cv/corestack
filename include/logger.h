@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <errno.h>
 #include <string.h> // IWYU pragma: export
+#include <time.h>
 
 typedef enum LoggerSeverity {
     LOG_DEBUG,
@@ -37,6 +38,12 @@ void logger_set_log_handler(int (*fn)(char*));
     @brief Produce a formatted heap-allocated string, with the current time.
 */
 char* _logger_make_log(enum LoggerSeverity severity, const char* group, const char* file, int line, const char* fmt, ...);
+
+/*!
+    @brief Same as _logger_make_log, but with the timestamp supplied by the caller.
+    @note exists so tests can pin the whole line; _logger_make_log is this with time(NULL).
+*/
+char* _logger_make_log_at(time_t now, enum LoggerSeverity severity, const char* group, const char* file, int line, const char* fmt, ...);
 
 /*!
     @brief sends log of a fully formatted string, consuming the string.

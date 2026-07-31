@@ -69,11 +69,14 @@ static const char* severity_to_string(enum LoggerSeverity severity) {
     }
 }
 
-char* _logger_make_log(enum LoggerSeverity severity, const char* group, const char* file, int line, const char* fmt, ...) {
+static char* logger_vmake_log(time_t now, enum LoggerSeverity severity, const char* group, const char* file, int line, const char* fmt, va_list args) {
     char date[64];
-    time_t now = time(NULL);
     struct tm utc;
-    gmtime_r(&now, &utc);
+    // gmtime_r fails once the year no longer fits in tm_year (time_t past
+    // 67768036191676799); without this check `utc` would stay uninitialized.
+    if (gmtime_r(&now, &utc) == NULL) {
+        return NULL;
+    }
     // "xx:xx:xx xx/xx/xx"
     strftime(date, sizeof(date), "%T %D", &utc);
 
@@ -87,23 +90,18 @@ char* _logger_make_log(enum LoggerSeverity severity, const char* group, const ch
         return NULL;
     }
 
-    va_list args;
-    va_start(args, fmt);
-
     va_list args_for_measuring;
     va_copy(args_for_measuring, args);
     int msg_len = vsnprintf(NULL, 0, fmt, args_for_measuring);
     va_end(args_for_measuring);
 
     if (msg_len < 0) {
-        va_end(args);
         return NULL;
     }
 
     size_t total_len = (size_t)prefix_len + (size_t)msg_len;
     char* result = malloc(total_len + 2);
     if (result == NULL) {
-        va_end(args);
         return NULL;
     }
 
@@ -115,6 +113,21 @@ char* _logger_make_log(enum LoggerSeverity severity, const char* group, const ch
     result[total_len] = '\n';
     result[total_len + 1] = '\0';
 
+    return result;
+}
+
+char* _logger_make_log(enum LoggerSeverity severity, const char* group, const char* file, int line, const char* fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    char* result = logger_vmake_log(time(NULL), severity, group, file, line, fmt, args);
+    va_end(args);
+    return result;
+}
+
+char* _logger_make_log_at(time_t now, enum LoggerSeverity severity, const char* group, const char* file, int line, const char* fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    char* result = logger_vmake_log(now, severity, group, file, line, fmt, args);
     va_end(args);
     return result;
 }
