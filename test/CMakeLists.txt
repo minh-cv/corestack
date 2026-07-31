@@ -9,3 +9,6 @@ add_executable(test_config test_config.c)
 target_link_libraries(test_config PRIVATE unity config)
 add_test(NAME config COMMAND test_config)
 
+add_executable(test_tetrissh test_tetrissh.c)
+target_link_libraries(test_tetrissh PRIVATE unity tetrissh)
+add_test(NAME tetrissh COMMAND test_tetrissh)
