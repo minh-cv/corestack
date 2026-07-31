@@ -77,6 +77,8 @@ target_link_libraries(draw_app PRIVATE tui config)
 if(BUILD_TESTING)
     add_subdirectory(src/draw_app/tests)
 endif()
+add_library(collection INTERFACE)
+target_include_directories(collection INTERFACE include)
 
 # add_executable(tetrisu src/tetrisu/main.c
 #     src/tetrisu/config_var.c)
