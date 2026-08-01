@@ -204,7 +204,8 @@ unsigned char* htttp_serialize(const HtttpMessage* msg, size_t* buffer_size) {
         first_len = snprintf(NULL, 0, "HTTTP/1.0 %d %s\r\n", msg->response.status, msg->response.reason);
     }
 
-    if (first_len < 0) {
+    assert(first_len != 0);
+    if (first_len <= 0) {
         return NULL;
     }
 
@@ -218,10 +219,25 @@ unsigned char* htttp_serialize(const HtttpMessage* msg, size_t* buffer_size) {
             return NULL;
         }
 
-        total_len += (size_t)len;
+        size_t would_be = total_len + (size_t)len;
+        if (would_be <= total_len) {
+            return NULL;
+        }
+        total_len = would_be;
     }
 
-    total_len += 2 + *ACCESS_MEM(msg, body_len);
+    {
+        size_t would_be = total_len + 2;
+        if (would_be <= total_len) {
+            return NULL;
+        }
+        total_len = would_be;
+        would_be += *ACCESS_MEM(msg, body_len);
+        if (would_be < total_len) {
+            return NULL;
+        }
+        total_len = would_be;
+    }
 
     unsigned char* dest = malloc(total_len);
     if (dest == NULL) {
@@ -264,6 +280,7 @@ unsigned char* htttp_serialize(const HtttpMessage* msg, size_t* buffer_size) {
     if (*ACCESS_MEM(msg, body_len) > 0) {
         memcpy(current, *ACCESS_MEM(msg, body), *ACCESS_MEM(msg, body_len));
     }
+    assert((size_t)(current + *ACCESS_MEM(msg, body_len) - (char*)dest) == total_len);
 
     *buffer_size = total_len;
 
