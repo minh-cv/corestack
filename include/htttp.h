@@ -38,7 +38,7 @@ typedef struct {
 
 int htttp_parse(unsigned char* buffer, size_t buffer_size, HtttpMessage* msg);
 unsigned char* htttp_serialize(const HtttpMessage* msg, size_t* buffer_size);
-int htttp_make_rfc_1123_date(char (*buf)[60]);
+char* htttp_make_rfc_1123_date(void);
 const char* htttp_get_header(const HtttpMessage* msg, const char* key);
 
 #endif

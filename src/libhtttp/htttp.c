@@ -287,19 +287,43 @@ unsigned char* htttp_serialize(const HtttpMessage* msg, size_t* buffer_size) {
     return dest;
 }
 
-int htttp_make_rfc_1123_date(char (*buf)[60]) {
+char* htttp_make_rfc_1123_date(void) {
+    static const size_t BUF_SIZE = 30;
+
+    char* buf = malloc(BUF_SIZE);
+    if (buf == NULL) {
+        return NULL;
+    }
+    
     time_t now = time(NULL);
     struct tm tp;
     if (gmtime_r(&now, &tp) == NULL) {
-        return -1;
+        free(buf);
+        return NULL;
     }
 
-    size_t res = strftime(*buf, 60u, "%a, %d %b %Y %H:%M:%S GMT", &tp);
+    static const char* const DAY[] = {"Sun","Mon","Tue","Wed","Thu","Fri","Sat"};
+    static const char* const MON[] = {"Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"};
+    int n = snprintf(
+        buf, 
+        BUF_SIZE, 
+        "%s, %02d %s %04d %02d:%02d:%02d GMT",
+        DAY[tp.tm_wday], 
+        tp.tm_mday, 
+        MON[tp.tm_mon], 
+        tp.tm_year + 1900, 
+        tp.tm_hour, 
+        tp.tm_min, 
+        tp.tm_sec);
 
-    if (res == 0) {
-        return -1;
+    if (n < 0) { free(buf); return NULL; }
+    if ((size_t)n >= BUF_SIZE) {
+        assert(false);
+        free(buf);
+        return NULL;
     }
-    return 0;
+    
+    return buf;
 }
 
 const char* htttp_get_header(const HtttpMessage* msg, const char* key) {
