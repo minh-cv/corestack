@@ -18,4 +18,16 @@
 #define MAYBE_UNUSED
 #endif
 
+/* Marks a function as taking a printf-style format string, enabling -Wformat
+ * checking of the variadic arguments against it. `fmt_idx` and `args_idx` are
+ * 1-based parameter positions of the format string and of the `...`. Must be
+ * written before the declaration, e.g.
+ * `FORMAT_PRINTF(1, 2) int log(const char* fmt, ...);`. */
+#if defined(__GNUC__) || defined(__clang__)
+#define FORMAT_PRINTF(fmt_idx, args_idx) \
+    __attribute__((format(printf, fmt_idx, args_idx)))
+#else
+#define FORMAT_PRINTF(fmt_idx, args_idx)
+#endif
+
 #endif
