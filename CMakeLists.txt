@@ -77,6 +77,12 @@ target_link_libraries(draw_app PRIVATE tui config)
 if(BUILD_TESTING)
     add_subdirectory(src/draw_app/tests)
 endif()
+add_library(collection INTERFACE)
+target_include_directories(collection INTERFACE include)
+
+add_library(network src/network/reader.c src/network/writer.c)
+target_include_directories(network PUBLIC include)
+target_link_libraries(network PUBLIC logger wire)
 
 # add_executable(tetrisu src/tetrisu/main.c
 #     src/tetrisu/config_var.c)
@@ -98,6 +104,7 @@ install(
         tui
         tuiui
         draw_app
+        network
     RUNTIME DESTINATION bin           # for executables (and DLLs on Windows)
     LIBRARY DESTINATION lib           # for shared libraries on Unix
     ARCHIVE DESTINATION lib           # for static libs (.a, .lib)

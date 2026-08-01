@@ -14,6 +14,7 @@ void client_logger_init(ClientLogger* c, LogBuf* buf, int client_fd) {
 }
 
 void client_logger_free(ClientLogger *c) {
+    c->buf->dropped += c->base.frame_count;
     client_io_free(&c->base);
 }
 
@@ -26,6 +27,10 @@ ClientIoResult client_logger_transist_write(struct ClientIo *c_base) {
     }
 
     unsigned int count = c->buf->buffer_size < CLIENT_IO_MAX_FRAME - c_base->frame_count ? (unsigned int)c->buf->buffer_size : CLIENT_IO_MAX_FRAME - c_base->frame_count;
+
+    if (count == 0) {
+        return CLIENT_IO_WOULDBLOCK;
+    }
     
     struct ClientIoFrame frames[CLIENT_IO_MAX_FRAME] = {0};
     for (unsigned int i = 0; i < count; i++) {

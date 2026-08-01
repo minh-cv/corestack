@@ -11,6 +11,8 @@
 #include <errno.h>
 #include <string.h> // IWYU pragma: export
 
+#include "macro_utility.h"
+
 typedef enum LoggerSeverity {
     LOG_DEBUG,
     LOG_INFO,
@@ -36,6 +38,7 @@ void logger_set_log_handler(int (*fn)(char*));
 /*!
     @brief Produce a formatted heap-allocated string, with the current time.
 */
+FORMAT_PRINTF(5, 6)
 char* _logger_make_log(enum LoggerSeverity severity, const char* group, const char* file, int line, const char* fmt, ...);
 
 /*!
