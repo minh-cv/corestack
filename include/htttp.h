@@ -36,9 +36,19 @@ typedef struct {
     bool is_request;
 } HtttpMessage;
 
+typedef struct {
+    bool is_method_owned;
+    bool is_path_owned;
+    bool is_reason_owned;
+    bool is_key_owned[HTTTP_HEADER_MAX];
+    bool is_value_owned[HTTTP_HEADER_MAX];
+    bool is_body_owned;
+} HtttpMessageOwnership;
+
 int htttp_parse(unsigned char* buffer, size_t buffer_size, HtttpMessage* msg);
 unsigned char* htttp_serialize(const HtttpMessage* msg, size_t* buffer_size);
 char* htttp_make_rfc_1123_date(void);
 const char* htttp_get_header(const HtttpMessage* msg, const char* key);
+void htttp_message_free(HtttpMessage* message, const HtttpMessageOwnership* ownership);
 
 #endif

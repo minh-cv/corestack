@@ -337,3 +337,34 @@ const char* htttp_get_header(const HtttpMessage* msg, const char* key) {
 
     return NULL;
 }
+
+void htttp_message_free(HtttpMessage* message, const HtttpMessageOwnership* ownership) {
+    if (message->is_request) {
+        if (ownership->is_method_owned) 
+            free((void*)message->request.method);
+        if (ownership->is_path_owned) 
+            free((void*)message->request.path);
+        for (size_t i = 0; i < message->request.header_count; i++) {
+            if (ownership->is_key_owned[i])
+                free((void *)message->request.header[i].key);
+            if (ownership->is_value_owned[i])
+                free((void *)message->request.header[i].value);
+        }
+        if (ownership->is_body_owned)
+            free((void *)message->request.body);
+    }
+    else {
+        if (ownership->is_reason_owned)
+            free((void *)message->response.reason);
+        for (size_t i = 0; i < message->response.header_count; i++) {
+            if (ownership->is_key_owned[i])
+                free((void *)message->response.header[i].key);
+            if (ownership->is_value_owned[i])
+                free((void *)message->response.header[i].value);
+        }
+        if (ownership->is_body_owned)
+            free((void *)message->response.body);
+    }
+
+    memset(message, 0, sizeof(*message));
+}
