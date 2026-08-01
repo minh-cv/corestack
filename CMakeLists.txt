@@ -26,6 +26,7 @@ target_link_libraries(common PUBLIC crypto)
 
 add_library(config src/config/config.c)
 target_include_directories(config PUBLIC include)
+add_library(corestack::config ALIAS config)
 
 
 add_library(client_io src/server/client_io.c)
@@ -59,24 +60,12 @@ target_link_libraries(logger PUBLIC wire)
 
 add_library(tui src/tui/tui.c)
 target_include_directories(tui PUBLIC include)
+add_library(corestack::tui ALIAS tui)
 
 add_library(tuiui src/tuiui/tuiui.c)
 target_include_directories(tuiui PUBLIC include)
 target_link_libraries(tuiui PUBLIC tui)
 
-add_executable(draw_app
-    src/draw_app/main.c
-    src/draw_app/app.c
-    src/draw_app/canvas.c
-    src/draw_app/canvas_state.c
-    src/draw_app/canvas_page.c
-    src/draw_app/pages.c)
-target_include_directories(draw_app PRIVATE src/draw_app)
-target_link_libraries(draw_app PRIVATE tui config)
-
-if(BUILD_TESTING)
-    add_subdirectory(src/draw_app/tests)
-endif()
 add_library(collection INTERFACE)
 target_include_directories(collection INTERFACE include)
 
@@ -103,7 +92,6 @@ install(
         logger
         tui
         tuiui
-        draw_app
         network
     RUNTIME DESTINATION bin           # for executables (and DLLs on Windows)
     LIBRARY DESTINATION lib           # for shared libraries on Unix
