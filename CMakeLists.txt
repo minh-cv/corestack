@@ -3,6 +3,9 @@ project(tetrish LANGUAGES C)
 
 include(CTest)
 
+# enables testing for current directory and below
+enable_testing()
+
 add_compile_options(-g -Wall -Wextra -Wpedantic -Wconversion -Wno-strict-prototypes)
 
 
@@ -72,6 +75,8 @@ target_include_directories(collection INTERFACE include)
 add_library(network src/network/reader.c src/network/writer.c)
 target_include_directories(network PUBLIC include)
 target_link_libraries(network PUBLIC logger wire)
+
+add_subdirectory(tests)
 
 # add_executable(tetrisu src/tetrisu/main.c
 #     src/tetrisu/config_var.c)

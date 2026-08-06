@@ -246,8 +246,358 @@ static void test_parse_request_line_valid_mashed_up_with_headers(void) {
 
 
 // UNIT TEST `parse_response_line`
+// TEST 1: test if parse_response_line correctly parses a valid response line
+static void test_parse_response_line_valid(void) {
+    unsigned char buf[] = "HTTTP/1.0 200 OK\r\n"
+    "Session-Id: s-8f31a2\r\n"
+    "Player-Id: p17\r\n"
+    "Tick-Rate: 20\r\n"
+    "Content-Type: application/json\r\n"
+    "Content-Length: 94\r\n"
+    "\r\n";
+    unsigned char* cursor = buf;
+    const unsigned char* end = buf + sizeof(buf) - 1;
+    HtttpMessage msg = {0};
 
+    TEST_ASSERT_EQUAL_INT(0, parse_response_line(&cursor, end, &msg));
+    TEST_ASSERT_EQUAL_INT(200, msg.response.status);
+    TEST_ASSERT_EQUAL_STRING("OK", msg.response.reason);
+    TEST_ASSERT_EQUAL_PTR(buf + 18, cursor); // cursor should point to the end of the buffer after parsing
+}
 
+// TEST 2: no space after HTTTP/1.0
+static void test_parse_response_line_invalid_no_space_after_version(void) {
+    unsigned char buf[] = "HTTTP/1.0200 OK\r\n"
+    "Session-Id: s-8f31a2\r\n"
+    "Player-Id: p17\r\n"
+    "Tick-Rate: 20\r\n"
+    "Content-Type: application/json\r\n"
+    "Content-Length: 94\r\n"
+    "\r\n";
+    unsigned char* cursor = buf;
+    const unsigned char* end = buf + sizeof(buf) - 1;
+    HtttpMessage msg = {
+        .arena = "main",
+        .player_id = "p17",
+        .board_width = 10,
+        .board_height = 20,
+        .next_tick = 48122
+    };
+
+    TEST_ASSERT_EQUAL_INT(-1, parse_response_line(&cursor, end, &msg));
+}
+
+// TEST 3: space is at the very last byte of the buffer
+static void test_parse_response_line_invalid_space_last_byte(void) {
+    unsigned char buf[] = "HTTTP/1.0200 OK\r\n"
+    "Session-Id: s-8f31a2\r\n"
+    "Player-Id: p17\r\n"
+    "Tick-Rate: 20\r\n"
+    "Content-Type: application/json\r\n"
+    "Content-Length: 94\r\n"
+    "\r\n";
+    unsigned char* cursor = buf;
+    const unsigned char* end = buf + sizeof(buf) - 1;
+    HtttpMessage msg = {
+        .arena = "main",
+        .player_id = "p17",
+        .board_width = 10,
+        .board_height = 20,
+        .next_tick = 48122
+    };
+
+    TEST_ASSERT_EQUAL_INT(-1, parse_response_line(&cursor, end, &msg));
+}
+
+// TEST 4: check if range of required status code is respected (from 100-599). for this we shall do robust boundary testing
+static void test_parse_response_line_valid_status_code_range(void) {
+    unsigned char buf[] = "HTTTP/1.0 100 OK\r\n"
+    "Session-Id: s-8f31a2\r\n"
+    "Player-Id: p17\r\n"
+    "Tick-Rate: 20\r\n"
+    "Content-Type: application/json\r\n"
+    "Content-Length: 94\r\n"
+    "\r\n";
+    unsigned char* cursor = buf;
+    const unsigned char* end = buf + sizeof(buf) - 1;
+    HtttpMessage msg = {
+        .arena = "main",
+        .player_id = "p17",
+        .board_width = 10,
+        .board_height = 20,
+        .next_tick = 48122
+    };
+
+    TEST_ASSERT_EQUAL_INT(0, parse_response_line(&cursor, end, &msg));
+
+    unsigned char buf2[] = "HTTTP/1.0 599 OK\r\n"
+    "Session-Id: s-8f31a2\r\n"
+    "Player-Id: p17\r\n"
+    "Tick-Rate: 20\r\n"
+    "Content-Type: application/json\r\n"
+    "Content-Length: 94\r\n"
+    "\r\n";
+    cursor = buf2;
+    end = buf2 + sizeof(buf2) - 1;
+
+    TEST_ASSERT_EQUAL_INT(0, parse_response_line(&cursor, end, &msg));
+}
+
+// TEST 5: check if range of required status code is just outside (99, 600)
+static void test_parse_response_line_invalid_status_code_range(void) {
+    unsigned char buf[] = "HTTTP/1.0 99 OK\r\n"
+    "Session-Id: s-8f31a2\r\n"
+    "Player-Id: p17\r\n"
+    "Tick-Rate: 20\r\n"
+    "Content-Type: application/json\r\n"
+    "Content-Length: 94\r\n"
+    "\r\n";
+    unsigned char* cursor = buf;
+    const unsigned char* end = buf + sizeof(buf) - 1;
+    HtttpMessage msg = {
+        .arena = "main",
+        .player_id = "p17",
+        .board_width = 10,
+        .board_height = 20,
+        .next_tick = 48122
+    };
+
+    TEST_ASSERT_EQUAL_INT(-1, parse_response_line(&cursor, end, &msg));
+
+    unsigned char buf2[] = "HTTTP/1.0 600 OK\r\n"
+    "Session-Id: s-8f31a2\r\n"
+    "Player-Id: p17\r\n"
+    "Tick-Rate: 20\r\n"
+    "Content-Type: application/json\r\n"
+    "Content-Length: 94\r\n"
+    "\r\n";
+    cursor = buf2;
+    end = buf2 + sizeof(buf2) - 1;
+
+    TEST_ASSERT_EQUAL_INT(-1, parse_response_line(&cursor, end, &msg));
+}
+
+// TEST 6: check if strtol converts string to longint given a base properly (that is if code is a non-numeric string)
+static void test_parse_response_line_invalid_status_code_non_numeric(void) {
+    unsigned char buf[] = "HTTTP/1.0 ABC OK\r\n"
+    "Session-Id: s-8f31a2\r\n"
+    "Player-Id: p17\r\n"
+    "Tick-Rate: 20\r\n"
+    "Content-Type: application/json\r\n"
+    "Content-Length: 94\r\n"
+    "\r\n";
+    unsigned char* cursor = buf;
+    const unsigned char* end = buf + sizeof(buf) - 1;
+    HtttpMessage msg = {
+        .arena = "main",
+        .player_id = "p17",
+        .board_width = 10,
+        .board_height = 20,
+        .next_tick = 48122
+    };
+
+    TEST_ASSERT_EQUAL_INT(-1, parse_response_line(&cursor, end, &msg));
+}
+
+// TEST 7: check training garbage in token [checking this condition: (unsigned char*)endptr != buffer]
+static void test_parse_response_line_invalid_status_code_garbage(void) {
+    unsigned char buf[] = "HTTTP/1.0 200abc OK\r\n"
+    "Session-Id: s-8f31a2\r\n"
+    "Player-Id: p17\r\n"
+    "Tick-Rate: 20\r\n"
+    "Content-Type: application/json\r\n"
+    "Content-Length: 94\r\n"
+    "\r\n";
+    unsigned char* cursor = buf;
+    const unsigned char* end = buf + sizeof(buf) - 1;
+    HtttpMessage msg = {
+        .arena = "main",
+        .player_id = "p17",
+        .board_width = 10,
+        .board_height = 20,
+        .next_tick = 48122
+    };
+
+    TEST_ASSERT_EQUAL_INT(-1, parse_response_line(&cursor, end, &msg));
+}
+
+// TEST 8: check for overflow of string [checking this condition: errno == ERANGE]
+static void test_parse_response_line_invalid_status_code_overflow(void) {
+    unsigned char buf[] = "HTTTP/1.0 999999999999\r\n"
+    "Session-Id: s-8f31a2\r\n"
+    "Player-Id: p17\r\n"
+    "Tick-Rate: 20\r\n"
+    "Content-Type: application/json\r\n"
+    "Content-Length: 94\r\n"
+    "\r\n";
+    unsigned char* cursor = buf;
+    const unsigned char* end = buf + sizeof(buf) - 1;
+    HtttpMessage msg = {
+        .arena = "main",
+        .player_id = "p17",
+        .board_width = 10,
+        .board_height = 20,
+        .next_tick = 48122
+    };
+
+    TEST_ASSERT_EQUAL_INT(-1, parse_response_line(&cursor, end, &msg));
+}
+
+// TEST 9: check if theres no spacing between the status code
+static void test_parse_response_line_invalid_no_space_after_status_code(void) {
+    unsigned char buf[] = "HTTTP/1.0 200OK\r\n"
+    "Session-Id: s-8f31a2\r\n"
+    "Player-Id: p17\r\n"
+    "Tick-Rate: 20\r\n"
+    "Content-Type: application/json\r\n"
+    "Content-Length: 94\r\n"
+    "\r\n";
+    unsigned char* cursor = buf;
+    const unsigned char* end = buf + sizeof(buf) - 1;
+    HtttpMessage msg = {
+        .arena = "main",
+        .player_id = "p17",
+        .board_width = 10,
+        .board_height = 20,
+        .next_tick = 48122
+    };
+
+    TEST_ASSERT_EQUAL_INT(-1, parse_response_line(&cursor, end, &msg));
+}
+
+// TEST 10: what if there is a double space between the htttp version and the status code
+static void test_parse_response_line_invalid_double_space_after_version(void) {
+    unsigned char buf[] = "HTTTP/1.0  200 OK\r\n"
+    "Session-Id: s-8f31a2\r\n"
+    "Player-Id: p17\r\n"
+    "Tick-Rate: 20\r\n"
+    "Content-Type: application/json\r\n"
+    "Content-Length: 94\r\n"
+    "\r\n";
+    unsigned char* cursor = buf;
+    const unsigned char* end = buf + sizeof(buf) - 1;
+    HtttpMessage msg = {
+        .arena = "main",
+        .player_id = "p17",
+        .board_width = 10,
+        .board_height = 20,
+        .next_tick = 48122
+    };
+
+    TEST_ASSERT_EQUAL_INT(-1, parse_response_line(&cursor, end, &msg));
+}
+
+// TEST 11: what if there are leading zeros infront of the status code?
+static void test_parse_response_line_invalid_leading_zeros_in_status_code(void) {
+    unsigned char buf[] = "HTTTP/1.0 00200 OK\r\n"
+    "Session-Id: s-8f31a2\r\n"
+    "Player-Id: p17\r\n"
+    "Tick-Rate: 20\r\n"
+    "Content-Type: application/json\r\n"
+    "Content-Length: 94\r\n"
+    "\r\n";
+    unsigned char* cursor = buf;
+    const unsigned char* end = buf + sizeof(buf) - 1;
+    HtttpMessage msg = {
+        .arena = "main",
+        .player_id = "p17",
+        .board_width = 10,
+        .board_height = 20,
+        .next_tick = 48122
+    };
+
+    TEST_ASSERT_EQUAL_INT(-1, parse_response_line(&cursor, end, &msg));
+}
+
+// TEST 12: checking when it uses skip_until_str, will it fail? say for example "HTTTP/1.0 404 Not Found\r\n", which is valid
+static void test_parse_response_line_valid_skip_until_str(void) {
+    unsigned char buf[] = "HTTTP/1.0 404 Not Found\r\n"
+    "Session-Id: s-8f31a2\r\n"
+    "Player-Id: p17\r\n"
+    "Tick-Rate: 20\r\n"
+    "Content-Type: application/json\r\n"
+    "Content-Length: 94\r\n"
+    "\r\n";
+    unsigned char* cursor = buf;
+    const unsigned char* end = buf + sizeof(buf) - 1;
+    HtttpMessage msg = {
+        .arena = "main",
+        .player_id = "p17",
+        .board_width = 10,
+        .board_height = 20,
+        .next_tick = 48122
+    };
+
+    TEST_ASSERT_EQUAL_INT(0, parse_response_line(&cursor, end, &msg));
+    TEST_ASSERT_EQUAL_INT(404, msg.response.status);
+    TEST_ASSERT_EQUAL_STRING("Not Found", msg.response.reason);
+}
+
+// TEST 13: check for the invalid one rn
+static void test_parse_response_line_invalid_skip_until_str(void) {
+    unsigned char buf[] = "HTTTP/1.0 200 \r\n"
+    "Session-Id: s-8f31a2\r\n"
+    "Player-Id: p17\r\n"
+    "Tick-Rate: 20\r\n"
+    "Content-Type: application/json\r\n"
+    "Content-Length: 94\r\n"
+    "\r\n";
+    unsigned char* cursor = buf;
+    const unsigned char* end = buf + sizeof(buf) - 1;
+    HtttpMessage msg = {
+        .arena = "main",
+        .player_id = "p17",
+        .board_width = 10,
+        .board_height = 20,
+        .next_tick = 48122
+    };
+
+    TEST_ASSERT_EQUAL_INT(-1, parse_response_line(&cursor, end, &msg));
+}
+
+// TEST 14: check for missing CRLF terminator after the status code and reason phrase. should get -1 from skip_until_str
+static void test_parse_response_line_invalid_missing_crlf(void) {
+    unsigned char buf[] = "HTTTP/1.0 200 OK"
+    "Session-Id: s-8f31a2\r\n"
+    "Player-Id: p17\r\n"
+    "Tick-Rate: 20\r\n"
+    "Content-Type: application/json\r\n"
+    "Content-Length: 94\r\n"
+    "\r\n";
+    unsigned char* cursor = buf;
+    const unsigned char* end = buf + sizeof(buf) - 1;
+    HtttpMessage msg = {
+        .arena = "main",
+        .player_id = "p17",
+        .board_width = 10,
+        .board_height = 20,
+        .next_tick = 48122
+    };
+
+    TEST_ASSERT_EQUAL_INT(-1, parse_response_line(&cursor, end, &msg));
+}
+
+// TEST 15: what if for status message, its not seperated by a newline (\n), but instead a carriage return (\r). should get -1 from skip_until_str
+static void test_parse_response_line_invalid_missing_newline(void) {
+    unsigned char buf[] = "HTTTP/1.0 200 OK\r"
+    "Session-Id: s-8f31a2\r\n"
+    "Player-Id: p17\r\n"
+    "Tick-Rate: 20\r\n"
+    "Content-Type: application/json\r\n"
+    "Content-Length: 94\r\n"
+    "\r\n";
+    unsigned char* cursor = buf;
+    const unsigned char* end = buf + sizeof(buf) - 1;
+    HtttpMessage msg = {
+        .arena = "main",
+        .player_id = "p17",
+        .board_width = 10,
+        .board_height = 20,
+        .next_tick = 48122
+    };
+
+    TEST_ASSERT_EQUAL_INT(-1, parse_response_line(&cursor, end, &msg));
+}
 
 
 int main(void) {
@@ -274,5 +624,32 @@ int main(void) {
     RUN_TEST(test_parse_request_line_invalid_no_crlf);
     RUN_TEST(test_parse_request_line_invalid_case_sensitive);
     RUN_TEST(test_parse_request_line_valid_mashed_up_with_headers);
+    RUN_TEST(test_parse_response_line_valid);
+    RUN_TEST(test_parse_response_line_invalid_no_space_after_version);
+    RUN_TEST(test_parse_response_line_invalid_space_last_byte);
+    RUN_TEST(test_parse_response_line_valid_status_code_range);
+    RUN_TEST(test_parse_response_line_invalid_status_code_range);
+    RUN_TEST(test_parse_response_line_invalid_status_code_non_numeric);
+    RUN_TEST(test_parse_response_line_invalid_status_code_garbage);
+    RUN_TEST(test_parse_response_line_invalid_status_code_overflow);
+    RUN_TEST(test_parse_response_line_invalid_no_space_after_status_code);
+    RUN_TEST(test_parse_response_line_invalid_double_space_after_version);
+    RUN_TEST_AT_LINE(test_parse_response_line_invalid_leading_zeros_in_status_code, 0);
+    RUN_TEST(test_parse_response_line_valid_skip_until_str);
+    RUN_TEST(test_parse_response_line_invalid_skip_until_str);
+    RUN_TEST(test_parse_response_line_invalid_missing_crlf);
+    RUN_TEST(test_parse_response_line_invalid_missing_newline);
+    RUN_TEST(test_parse_response_line_invalid_leading_zeros_in_status_code);
+
+
+
+
+
+
+
+
+
+
+
     return UNITY_END();
 }
