@@ -951,7 +951,7 @@ static void test_htttp_parse_valid_response(void) {
 
     HtttpMessage msg = {0};
 
-    int result = htttp_parse(buffer, sizeof(buffer) - 1, &msg); // omit training NUL
+    int result = htttp_parse(buf, sizeof(buf) - 1, &msg); // omit training NUL
 
     // result
     TEST_ASSERT_EQUAL_INT(0, result);
@@ -967,104 +967,258 @@ static void test_htttp_parse_valid_response(void) {
     TEST_ASSERT_EQUAL_STRING("Session-Id", msg.response.header[0].key);
     TEST_ASSERT_EQUAL_STRING(" s-8f31a2", msg.response.header[0].value);
 
-    
+    TEST_ASSERT_EQUAL_STRING("Player-Id", msg.response.header[1].key);
+    TEST_ASSERT_EQUAL_STRING(" p17", msg.response.header[1].value);
 
+    TEST_ASSERT_EQUAL_STRING("Tick-Rate", msg.response.header[2].key);
+    TEST_ASSERT_EQUAL_STRING(" 20", msg.response.header[2].value);
 
+    TEST_ASSERT_EQUAL_STRING("Content-Type", msg.response.header[3].key);
+    TEST_ASSERT_EQUAL_STRING(" application/json", msg.response.header[3].value);
 
+    TEST_ASSERT_EQUAL_STRING("Content-Length", msg.response.header[4].key);
+    TEST_ASSERT_EQUAL_STRING(" 94", msg.response.header[4].value);
 
-
+    // response message body
+    const char* expected_body = "{\"arena\":\"main\",\"player_id\":\"p17\",\"board_width\":10,\"board_height\":20,\"next_tick\":48122}";
+    TEST_ASSERT_EQUAL_UINT(strlen(expected_body), msg.response.body_len);
+    TEST_ASSERT_EQUAL_MEMORY(expected_body, msg.response.body, msg.response.body_len);
 }
 
-// TEST 3: checks if header parse cleanly but buffer is exactly consumed after last header
-// expect -1
+// TEST 3: headers parse cleanly but the buffer is exactly exhausted right after the last
+// header's CRLF -- zero bytes left for a blank-line terminator. expect -1
 static void test_htttp_parse_headers_consume_everything_no_terminator(void) {
-    unsigned char* buf[] = 
+    unsigned char buf[] =
     "HTTTP/1.0 409 INVALID_MOVE\r\n"
     "Seq: 43\r\n"
-    "Server-Tick: 48124\r\n"
-    "Content-Type: application/json\r\n"
-    "Content-Length: 82\r\n"
-    "\r\n"
-    "{\"accepted\":false,\"reason\":\"collision\",\"authoritative_x\":3,\"authoritative_y\":14}";
+    "Server-Tick: 48124\r\n";
+    HtttpMessage msg = {0};
+
+    int result = htttp_parse(buf, sizeof(buf) - 1, &msg);
+
+    TEST_ASSERT_EQUAL_INT(-1, result);
 }
 
-// TEST 4: test if the parsing is right.
+// TEST 4: exactly one stray byte left after headers -- not enough for a 2-byte terminator. expect -1
 static void test_htttp_parse_one_stray_byte_after_headers(void) {
-    unsigned char& buf[] =
+    unsigned char buf[] =
+    "GET /arena/main/state HTTTP/1.0\r\n"
+    "Session-Id: s-8f31a2\r\n"
+    "Accept: application/json\r\n"
+    "\r"; // single stray byte, not a full "\r\n"
+    HtttpMessage msg = {0};
+
+    int result = htttp_parse(buf, sizeof(buf) - 1, &msg);
+
+    TEST_ASSERT_EQUAL_INT(-1, result);
+}
+
+// TEST 5: no headers at all -- request line immediately followed by the blank line.
+// expect success, header_count == 0
+static void test_htttp_parse_zero_headers_straight_to_blank_line(void) {
+    unsigned char buf[] =
+    "GET /arena/main/state HTTTP/1.0\r\n"
+    "\r\n";
+    HtttpMessage msg = {0};
+
+    int result = htttp_parse(buf, sizeof(buf) - 1, &msg);
+
+    TEST_ASSERT_EQUAL_INT(0, result);
+    TEST_ASSERT_EQUAL_INT(0, msg.request.header_count);
+    TEST_ASSERT_EQUAL_UINT(0, msg.request.body_len);
+}
+
+// TEST 6: exactly HTTTP_HEADER_MAX headers + blank line. expect success, all headers captured.
+// built at runtime rather than hand-typed -- HTTTP_HEADER_MAX lines is a lot to write out literally
+static void test_htttp_parse_exactly_max_headers(void) {
+    unsigned char buffer[4096];
+    int offset = 0;
+    offset += sprintf((char*)buffer + offset, "GET /arena/main/state HTTTP/1.0\r\n");
+    for (int i = 0; i < HTTTP_HEADER_MAX; i++) {
+        offset += sprintf((char*)buffer + offset, "H%d: v%d\r\n", i, i);
+    }
+    offset += sprintf((char*)buffer + offset, "\r\n");
+    HtttpMessage msg = {0};
+
+    int result = htttp_parse(buffer, (size_t)offset, &msg);
+
+    TEST_ASSERT_EQUAL_INT(0, result);
+    TEST_ASSERT_EQUAL_INT(HTTTP_HEADER_MAX, msg.request.header_count);
+    TEST_ASSERT_EQUAL_STRING("H0", msg.request.header[0].key);
+    TEST_ASSERT_EQUAL_STRING(" v0", msg.request.header[0].value);
+    TEST_ASSERT_EQUAL_STRING("H31", msg.request.header[HTTTP_HEADER_MAX - 1].key);
+    TEST_ASSERT_EQUAL_STRING(" v31", msg.request.header[HTTTP_HEADER_MAX - 1].value);
+}
+
+// TEST 7: HTTTP_HEADER_MAX + 1 headers -- the loop stops once header_count hits the max,
+// leaving the (MAX+1)-th header line unparsed and NOT sitting at "\r\n", so the post-loop
+// terminator check fails. this is NOT a silent truncation to MAX headers -- the whole parse
+// fails. expect -1
+static void test_htttp_parse_over_max_headers_fails(void) {
+    unsigned char buffer[4096];
+    int offset = 0;
+    offset += sprintf((char*)buffer + offset, "GET /arena/main/state HTTTP/1.0\r\n");
+    for (int i = 0; i < HTTTP_HEADER_MAX + 1; i++) {
+        offset += sprintf((char*)buffer + offset, "H%d: v%d\r\n", i, i);
+    }
+    offset += sprintf((char*)buffer + offset, "\r\n");
+    HtttpMessage msg = {0};
+
+    int result = htttp_parse(buffer, (size_t)offset, &msg);
+
+    TEST_ASSERT_EQUAL_INT(-1, result);
+}
+
+// TEST 8: buffer without the "HTTTP/1.0" prefix -- dispatch should treat it as a request
+static void test_htttp_parse_dispatches_request(void) {
+    unsigned char buf[] = "PING / HTTTP/1.0\r\n\r\n";
+    HtttpMessage msg = {0};
+
+    int result = htttp_parse(buf, sizeof(buf) - 1, &msg);
+
+    TEST_ASSERT_EQUAL_INT(0, result);
+    TEST_ASSERT_TRUE(msg.is_request);
+}
+
+// TEST 9: "HTTTP/1.0" prefix is present (so is_request should end up false), but the rest of
+// the response line is malformed. is_request is set unconditionally before line parsing even
+// starts, so it should still read false even though the overall parse fails
+static void test_htttp_parse_dispatch_set_before_line_parse_failure(void) {
+    unsigned char buf[] = "HTTTP/1.0 ABC OK\r\n\r\n"; // non-numeric status -> parse_response_line fails
+    HtttpMessage msg = {0};
+
+    int result = htttp_parse(buf, sizeof(buf) - 1, &msg);
+
+    TEST_ASSERT_EQUAL_INT(-1, result);
+    TEST_ASSERT_FALSE(msg.is_request);
+}
+
+// TEST 10: malformed request line should propagate -1 out of htttp_parse
+static void test_htttp_parse_invalid_request_line_propagates(void) {
+    unsigned char buf[] = "ROTATE/room/67/player/69HTTTP/1.0\r\n\r\n"; // missing separators
+    HtttpMessage msg = {0};
+
+    int result = htttp_parse(buf, sizeof(buf) - 1, &msg);
+
+    TEST_ASSERT_EQUAL_INT(-1, result);
+}
+
+// TEST 11: malformed response line should propagate -1 out of htttp_parse
+static void test_htttp_parse_invalid_response_line_propagates(void) {
+    unsigned char buf[] = "HTTTP/1.0 601 OK\r\n\r\n"; // status out of the 100-599 range
+    HtttpMessage msg = {0};
+
+    int result = htttp_parse(buf, sizeof(buf) - 1, &msg);
+
+    TEST_ASSERT_EQUAL_INT(-1, result);
+}
+
+// TEST 12: headers parse fine, but what's left after them is exactly 2 bytes that aren't
+// "\r\n". this hits the post-loop terminator check directly (the loop exits because
+// end-buffer isn't > 2, not because parse_header failed on garbage). expect -1
+static void test_htttp_parse_missing_blank_line_terminator(void) {
+    unsigned char buf[] =
+    "GET /arena/main/state HTTTP/1.0\r\n"
+    "Accept: application/json\r\n"
+    "XY";
+    HtttpMessage msg = {0};
+
+    int result = htttp_parse(buf, sizeof(buf) - 1, &msg);
+
+    TEST_ASSERT_EQUAL_INT(-1, result);
+}
+
+// TEST 13: positive counterpart to TEST 12 -- terminator correctly present. expect success
+static void test_htttp_parse_blank_line_terminator_present(void) {
+    unsigned char buf[] =
+    "GET / HTTTP/1.0\r\n"
+    "Accept: text/plain\r\n"
+    "\r\n";
+    HtttpMessage msg = {0};
+
+    int result = htttp_parse(buf, sizeof(buf) - 1, &msg);
+
+    TEST_ASSERT_EQUAL_INT(0, result);
+    TEST_ASSERT_EQUAL_INT(1, msg.request.header_count);
+}
+
+// TEST 14: header_count must be reset to 0 before counting, not accumulated onto whatever
+// was already sitting in the struct (e.g. from a reused HtttpMessage across parses)
+static void test_htttp_parse_resets_stale_header_count(void) {
+    unsigned char buf[] =
     "GET /arena/main/state HTTTP/1.0\r\n"
     "Session-Id: s-8f31a2\r\n"
     "Accept: application/json\r\n"
     "\r\n";
+    HtttpMessage msg = {0};
+    msg.request.header_count = 17; // simulate leftover state from a prior parse on a reused struct
+
+    int result = htttp_parse(buf, sizeof(buf) - 1, &msg);
+
+    TEST_ASSERT_EQUAL_INT(0, result);
+    TEST_ASSERT_EQUAL_INT(2, msg.request.header_count); // reset then recounted, not 17 + 2
 }
 
-// TEST 5: test if the parsing is right.
-static void test_htttp_parse_zero_headers_straight_to_blank_line(void) {
-    ...;
-}
-
-// TEST 6: test if the parsing is right.
-static void test_htttp_parse_exactly_max_headers(void) {
-    ...;
-}
-
-// TEST 7: test if the parsing is right.
-static void test_htttp_parse_over_max_headers_fails(void) {
-    ...;
-}
-
-// TEST 8: test if the parsing is right.
-static void test_htttp_parse_dispatches_request(void) {
-    ...;
-}
-
-// TEST 9: test if the parsing is right.
-static void test_htttp_parse_dispatch_set_before_line_parse_failure(void) {
-    ...;
-}
-
-// TEST 10: test if the parsing is right.
-static void test_htttp_parse_invalid_request_line_propagates(void) {
-    ...;
-}
-
-// TEST 11: test if the parsing is right.
-static void test_htttp_parse_invalid_response_line_propagates(void) {
-    ...;
-}
-
-// TEST 12: test if the parsing is right.
-static void test_htttp_parse_missing_blank_line_terminator(void) {
-    ...;
-}
-
-// TEST 13: test if the parsing is right.
-static void test_htttp_parse_blank_line_terminator_present(void) {
-    ...;
-}
-
-// TEST 14: test if the parsing is right.
-static void test_htttp_parse_resets_stale_header_count(void) {
-    ...;
-}
-
-// TEST 15: test if the parsing is right.
+// TEST 15: a malformed header mid-stream should propagate -1. the bad line has no ':'
+// anywhere between it and the true end of the buffer, so skip_until can't "cheat" by
+// finding a colon on a later header line
 static void test_htttp_parse_invalid_header_propagates(void) {
-    ...;
+    unsigned char buf[] =
+    "GET /arena/main/state HTTTP/1.0\r\n"
+    "Accept: application/json\r\n"
+    "NoColonHeader\r\n"
+    "\r\n";
+    HtttpMessage msg = {0};
+
+    int result = htttp_parse(buf, sizeof(buf) - 1, &msg);
+
+    TEST_ASSERT_EQUAL_INT(-1, result);
 }
 
-// TEST 16: test if the parsing is right.
+// TEST 16: body must span everything from right after the blank line to the true end of the
+// buffer, including embedded "\r\n" sequences -- proving parse_body doesn't stop early the
+// way header/line parsing does
 static void test_htttp_parse_body_sliced_correctly(void) {
-    ...;
+    unsigned char buf[] =
+    "GET /arena/main/state HTTTP/1.0\r\n"
+    "Accept: text/plain\r\n"
+    "\r\n"
+    "line1\r\nline2\r\nline3";
+    HtttpMessage msg = {0};
+
+    int result = htttp_parse(buf, sizeof(buf) - 1, &msg);
+
+    TEST_ASSERT_EQUAL_INT(0, result);
+    const char* expected_body = "line1\r\nline2\r\nline3";
+    TEST_ASSERT_EQUAL_UINT(strlen(expected_body), msg.request.body_len);
+    TEST_ASSERT_EQUAL_MEMORY(expected_body, msg.request.body, msg.request.body_len);
 }
 
-// TEST 17: test if the parsing is right.
+// TEST 17: blank line is the very last thing in the buffer -- real-world headers-only
+// request, no body at all
 static void test_htttp_parse_empty_body(void) {
-    ...;
+    unsigned char buf[] =
+    "GET /arena/main/state HTTTP/1.0\r\n"
+    "Session-Id: s-8f31a2\r\n"
+    "Accept: application/json\r\n"
+    "\r\n";
+    HtttpMessage msg = {0};
+
+    int result = htttp_parse(buf, sizeof(buf) - 1, &msg);
+
+    TEST_ASSERT_EQUAL_INT(0, result);
+    TEST_ASSERT_EQUAL_UINT(0, msg.request.body_len);
+    TEST_ASSERT_EQUAL_PTR(buf + sizeof(buf) - 1, msg.request.body);
 }
 
-// TEST 18: test if the parsing is right.
+// TEST 18: buffer_size == 0 -- degenerate input, should fail cleanly with no OOB read
 static void test_htttp_parse_empty_input(void) {
-    ...;
+    unsigned char buf[] = "irrelevant"; // buffer_size is passed as 0, so content is never touched
+    HtttpMessage msg = {0};
+
+    int result = htttp_parse(buf, 0, &msg);
+
+    TEST_ASSERT_EQUAL_INT(-1, result);
 }
 
 
