@@ -6,6 +6,7 @@
 
 #include "unity.h"      // Unity testing framework
 #include "common.h"     // Common utility functions and definitions
+#include "unity_internals.h"
 
 
 // can contain anything to run before each test
@@ -687,6 +688,386 @@ static void test_parse_header_no_trimming_before_colon(void) {
 }
 
 
+// UNIT TEST: `parse_body`. nothing much just a few tests
+// TEST 1: check if parse_body works for a normal body. this for request, body_len should equate to end-buffer, body should equate to buffer
+static void test_parse_body_valid_request(void) {
+    unsigned char buf[] = 
+    "{"
+        "\"arena\":         \"main\","
+        "\"player_id\":     \"p17\","
+        "\"board_width\":   \"10\","
+        "\"board_height\":  \"20,"
+        "\"next_tick\":     \"48122"
+    "}";
+    unsigned char* cursor = buf;
+    const unsigned char* end = buf + sizeof(buf) - 1;   // excludes training NUL
+    HtttpMessage msg = { 
+        .is_request = true 
+    };
+
+    parse_body(&cursor, end, &msg);
+
+    TEST_ASSERT_EQUAL_UINT(sizeof(buf) - 1, msg.request.body_len);
+    TEST_ASSERT_EQUAL_PTR(buf, msg.request.body);
+}
+
+// TEST 2: check if parse_body works for a normal body. this for response
+static void test_parse_body_valid_response(void) {
+    unsigned char buf[] = 
+    "{"
+        "\"arena\":         \"main\","
+        "\"player_id\":     \"p17\","
+        "\"board_width\":   \"10\","
+        "\"board_height\":  \"20,"
+        "\"next_tick\":     \"48122"
+    "}";
+    unsigned char* cursor = buf;
+    const unsigned char* end = buf + sizeof(buf) - 1;   // excludes training NUL
+    HtttpMessage msg = { 
+        .is_request = false 
+    };
+
+    parse_body(&cursor, end, &msg);
+
+    TEST_ASSERT_EQUAL_UINT(sizeof(buf) - 1, msg.response.body_len);
+    TEST_ASSERT_EQUAL_PTR(buf, msg.response.body);
+}
+
+// TEST 3: what happens if body is empty?
+static void test_parse_body_empty_body(void) {
+    unsigned char buf[] = "";
+    unsigned char* cursor = buf;
+    const unsigned char* end = buf;   // excludes training NUL
+    HtttpMessage msg = { 
+        .is_request = true 
+    };
+
+    parse_body(&cursor, end, &msg);
+
+    TEST_ASSERT_EQUAL_UINT(0, msg.request.body_len);
+    TEST_ASSERT_EQUAL_PTR(buf, msg.request.body);
+}
+
+// TEST 4: what happens if theres a NUL byte in the body? 
+static void test_parse_body_contains_embedded_nul(void) {
+    unsigned char buf[] = 
+    "{"
+        "\"arena\":         \"main\","
+        "\"player_id\":     \"p17\","
+        "\"board_width\":   \"10\","
+        "\0"
+        "\"board_height\":  \"20,"
+        "\"next_tick\":     \"48122"
+    "}";
+    unsigned char* cursor = buf;
+    const unsigned char* end = buf + sizeof(buf) - 1;   // excludes training NUL
+    HtttpMessage msg = { 
+        .is_request = true 
+    };
+
+    parse_body(&cursor, end, &msg);
+
+    TEST_ASSERT_EQUAL_UINT(sizeof(buf) - 1, msg.request.body_len);
+    TEST_ASSERT_EQUAL_PTR(buf, msg.request.body); // check if pointers points to same memory location
+    TEST_ASSERT_EQUAL_MEMORY(buf, msg.request.body, msg.request.body_len);
+}
+
+// TEST 5: what happens if the body includes clrf in the value?
+static void test_parse_body_contains_clrf_in_value(void) {
+    unsigned char buf[] = 
+    "{"
+        "\"arena\":         \"main\","
+        "\"player_id\":     \"p17\r\n\","
+        "\"board_width\":   \"10\","
+        "\"board_height\":  \"20,"
+        "\"next_tick\":     \"48122"
+    "}";
+    unsigned char* cursor = buf;
+    const unsigned char* end = buf + sizeof(buf) - 1;   // excludes training NUL
+    HtttpMessage msg = { 
+        .is_request = true 
+    };
+
+    parse_body(&cursor, end, &msg);
+
+    TEST_ASSERT_EQUAL_UINT(sizeof(buf) - 1, msg.request.body_len);
+    TEST_ASSERT_EQUAL_PTR(buf, msg.request.body); // check if pointers points to same memory location
+    TEST_ASSERT_EQUAL_MEMORY(buf, msg.request.body, msg.request.body_len);
+}
+
+// TEST 6: what happens if the body includes clrf?
+static void test_parse_body_contains_clrf(void) {
+    unsigned char buf[] = 
+    "{"
+        "\"arena\":         \"main\","
+        "\"player_id\":     \"p17\","
+        "\r\n,"
+        "\"board_width\":   \"10\","
+        "\"board_height\":  \"20,"
+        "\"next_tick\":     \"48122"
+    "}";
+    unsigned char* cursor = buf;
+    const unsigned char* end = buf + sizeof(buf) - 1;   // excludes training NUL
+    HtttpMessage msg = { 
+        .is_request = true 
+    };
+
+    parse_body(&cursor, end, &msg);
+
+    TEST_ASSERT_EQUAL_UINT(sizeof(buf) - 1, msg.request.body_len);
+    TEST_ASSERT_EQUAL_PTR(buf, msg.request.body); // check if pointers points to same memory location
+    TEST_ASSERT_EQUAL_MEMORY(buf, msg.request.body, msg.request.body_len);
+}
+
+// TEST 7: checks if *buffer_ref updates after calling parse_body
+static void test_parse_body_does_not_advance_cursor(void) {
+    unsigned char buf[] = 
+    "{"
+        "\"arena\":         \"main\","
+        "\"player_id\":     \"p17\","
+        "\"board_width\":   \"10\","
+        "\"board_height\":  \"20,"
+        "\"next_tick\":     \"48122"
+    "}";
+    unsigned char* cursor = buf;
+    const unsigned char* end = buf + sizeof(buf) - 1;   // excludes training NUL
+    HtttpMessage msg = { 
+        .is_request = true 
+    };
+
+    parse_body(&cursor, end, &msg);
+
+    TEST_ASSERT_EQUAL_PTR(buf, cursor);
+    TEST_ASSERT_EQUAL_UINT(sizeof(buf) - 1, msg.request.body_len);
+}
+
+// TEST 8: checks if msg.request.body also changes if i change a byte in buf after calling parse_bpdy
+static void test_parse_body_is_a_view_not_a_copy(void) {
+    unsigned char buf[] = 
+    "{"
+        "\"arena\":         \"main\","
+        "\"player_id\":     \"p17\","
+        "\"board_width\":   \"10\","
+        "\"board_height\":  \"20,"
+        "\"next_tick\":     \"48122"
+    "}";
+    unsigned char* cursor = buf;
+    const unsigned char* end = buf + sizeof(buf) - 1;   // excludes training NUL
+    HtttpMessage msg = { 
+        .is_request = true 
+    };
+
+    parse_body(&cursor, end, &msg);
+
+    TEST_ASSERT_EQUAL_PTR(buf, msg.request.body); // same address, not a malloc copy
+
+    // now i change one of the buf
+    buf[2] = 'X';
+
+    TEST_ASSERT_EQUAL_CHAR('X', ((const char*)msg.request.body)[2]);
+}
+
+// TEST 9: what if our body is big af, then does sanity-check trucates/or have weird behaviours?
+static void test_parse_body_large_buffer(void) {
+    static unsigned char buf[9000];
+
+    for (size_t i = 0; i < sizeof(buf); i++) {
+        buf[i] = (unsigned char)('a' + (i % 26)); // repeating a-z pattern, no special chars needed
+    }
+
+    unsigned char* cursor = buf;
+    const unsigned char* end = buf + sizeof(buf);
+    HtttpMessage msg = { 
+        .is_request = true 
+    };
+
+    parse_body(&cursor, end, &msg);
+
+    TEST_ASSERT_EQUAL_UINT(sizeof(buf), msg.request.body_len);
+    TEST_ASSERT_EQUAL_PTR(buf, msg.request.body);
+    TEST_ASSERT_EQUAL_MEMORY(buf, msg.request.body, msg.request.body_len);
+}
+
+
+// UNIT TEST: `htttp_parse`
+// TEST 1: test if the parsing is right for request
+static void test_htttp_parse_valid_request(void) {
+    unsigned char buffer[] = 
+    "JOIN /arena/main HTTTP/1.0\r\n"
+    "Host: tetrish.local\r\n"
+    "User: alice\r\n"
+    "Mode: battle-royale\r\n"
+    "Client-Version: 1.0\r\n"
+    "Content-Length: 35\r\n"
+    "\r\n"
+    "{\"skin\":\"cyan\",\"start_level\":0}";
+
+    HtttpMessage msg = {0};
+
+    int result = htttp_parse(buffer, sizeof(buffer) - 1, &msg); // omit training NUL
+
+    // result
+    TEST_ASSERT_EQUAL_INT(0, result);
+
+    // request line
+    TEST_ASSERT_TRUE(msg.is_request);
+    TEST_ASSERT_EQUAL_STRING("JOIN", msg.request.method);
+    TEST_ASSERT_EQUAL_STRING("/arena/main", msg.request.path);
+
+    // request headers
+    TEST_ASSERT_EQUAL_INT(5, msg.request.header_count);
+    TEST_ASSERT_EQUAL_STRING("Host", msg.request.header[0].key);
+    TEST_ASSERT_EQUAL_STRING(" tetrish.local", msg.request.header[0].value);
+
+    TEST_ASSERT_EQUAL_STRING("User", msg.request.header[1].key);
+    TEST_ASSERT_EQUAL_STRING(" alice", msg.request.header[1].value);
+
+    TEST_ASSERT_EQUAL_STRING("Mode", msg.request.header[2].key);
+    TEST_ASSERT_EQUAL_STRING(" battle-royale", msg.request.header[2].value);
+
+    TEST_ASSERT_EQUAL_STRING("Client-Version", msg.request.header[3].key);
+    TEST_ASSERT_EQUAL_STRING(" 1.0", msg.request.header[3].value);
+
+    TEST_ASSERT_EQUAL_STRING("Content-Length", msg.request.header[4].key);
+    TEST_ASSERT_EQUAL_STRING(" 35", msg.request.header[4].value);
+
+    // request message body
+    const char* expected_body = "{\"skin\":\"cyan\",\"start_level\":0}";
+    TEST_ASSERT_EQUAL_UINT(strlen(expected_body), msg.request.body_len);
+    TEST_ASSERT_EQUAL_MEMORY(expected_body, msg.request.body, msg.request.body_len);
+}
+
+// TEST 2: test if the parsing is right for response
+static void test_htttp_parse_valid_response(void) {
+    unsigned char buf[] =
+    "HTTTP/1.0 200 OK\r\n"
+    "Session-Id: s-8f31a2\r\n"
+    "Player-Id: p17\r\n"
+    "Tick-Rate: 20\r\n"
+    "Content-Type: application/json\r\n"
+    "Content-Length: 94\r\n"
+    "\r\n"
+    "{\"arena\":\"main\",\"player_id\":\"p17\",\"board_width\":10,\"board_height\":20,\"next_tick\":48122}";
+
+    HtttpMessage msg = {0};
+
+    int result = htttp_parse(buffer, sizeof(buffer) - 1, &msg); // omit training NUL
+
+    // result
+    TEST_ASSERT_EQUAL_INT(0, result);
+
+    // status line
+    TEST_ASSERT_FALSE(msg.is_request);
+    TEST_ASSERT_EQUAL_INT(200, msg.response.status);
+    TEST_ASSERT_EQUAL_STRING("OK", msg.response.reason);
+
+    // response headers
+    TEST_ASSERT_EQUAL_INT(5, msg.response.header_count);
+
+    TEST_ASSERT_EQUAL_STRING("Session-Id", msg.response.header[0].key);
+    TEST_ASSERT_EQUAL_STRING(" s-8f31a2", msg.response.header[0].value);
+
+    
+
+
+
+
+
+}
+
+// TEST 3: checks if header parse cleanly but buffer is exactly consumed after last header
+// expect -1
+static void test_htttp_parse_headers_consume_everything_no_terminator(void) {
+    unsigned char* buf[] = 
+    "HTTTP/1.0 409 INVALID_MOVE\r\n"
+    "Seq: 43\r\n"
+    "Server-Tick: 48124\r\n"
+    "Content-Type: application/json\r\n"
+    "Content-Length: 82\r\n"
+    "\r\n"
+    "{\"accepted\":false,\"reason\":\"collision\",\"authoritative_x\":3,\"authoritative_y\":14}";
+}
+
+// TEST 4: test if the parsing is right.
+static void test_htttp_parse_one_stray_byte_after_headers(void) {
+    unsigned char& buf[] =
+    "GET /arena/main/state HTTTP/1.0\r\n"
+    "Session-Id: s-8f31a2\r\n"
+    "Accept: application/json\r\n"
+    "\r\n";
+}
+
+// TEST 5: test if the parsing is right.
+static void test_htttp_parse_zero_headers_straight_to_blank_line(void) {
+    ...;
+}
+
+// TEST 6: test if the parsing is right.
+static void test_htttp_parse_exactly_max_headers(void) {
+    ...;
+}
+
+// TEST 7: test if the parsing is right.
+static void test_htttp_parse_over_max_headers_fails(void) {
+    ...;
+}
+
+// TEST 8: test if the parsing is right.
+static void test_htttp_parse_dispatches_request(void) {
+    ...;
+}
+
+// TEST 9: test if the parsing is right.
+static void test_htttp_parse_dispatch_set_before_line_parse_failure(void) {
+    ...;
+}
+
+// TEST 10: test if the parsing is right.
+static void test_htttp_parse_invalid_request_line_propagates(void) {
+    ...;
+}
+
+// TEST 11: test if the parsing is right.
+static void test_htttp_parse_invalid_response_line_propagates(void) {
+    ...;
+}
+
+// TEST 12: test if the parsing is right.
+static void test_htttp_parse_missing_blank_line_terminator(void) {
+    ...;
+}
+
+// TEST 13: test if the parsing is right.
+static void test_htttp_parse_blank_line_terminator_present(void) {
+    ...;
+}
+
+// TEST 14: test if the parsing is right.
+static void test_htttp_parse_resets_stale_header_count(void) {
+    ...;
+}
+
+// TEST 15: test if the parsing is right.
+static void test_htttp_parse_invalid_header_propagates(void) {
+    ...;
+}
+
+// TEST 16: test if the parsing is right.
+static void test_htttp_parse_body_sliced_correctly(void) {
+    ...;
+}
+
+// TEST 17: test if the parsing is right.
+static void test_htttp_parse_empty_body(void) {
+    ...;
+}
+
+// TEST 18: test if the parsing is right.
+static void test_htttp_parse_empty_input(void) {
+    ...;
+}
+
+
 
 int main(void) {
     UNITY_BEGIN();
@@ -740,8 +1121,34 @@ int main(void) {
     RUN_TEST(test_parse_header_fills_last_valid_slot);
     RUN_TEST(test_parse_header_value_skips_false_positive_cr);
     RUN_TEST(test_parse_header_no_trimming_before_colon);
+    RUN_TEST(test_parse_body_valid_request);
+    RUN_TEST(test_parse_body_valid_response);
+    RUN_TEST(test_parse_body_empty_body);
+    RUN_TEST(test_parse_body_contains_embedded_nul);
+    RUN_TEST(test_parse_body_contains_clrf_in_value);
+    RUN_TEST(test_parse_body_contains_clrf);
+    RUN_TEST(test_parse_body_does_not_advance_cursor);
+    RUN_TEST(test_parse_body_is_a_view_not_a_copy);
+    RUN_TEST(test_parse_body_large_buffer);
 
-
+    RUN_TEST(test_htttp_parse_valid_request);
+    RUN_TEST(test_htttp_parse_valid_response);
+    RUN_TEST(test_htttp_parse_headers_consume_everything_no_terminator);
+    RUN_TEST(test_htttp_parse_one_stray_byte_after_headers);
+    RUN_TEST(test_htttp_parse_zero_headers_straight_to_blank_line);
+    RUN_TEST(test_htttp_parse_exactly_max_headers);
+    RUN_TEST(test_htttp_parse_over_max_headers_fails);
+    RUN_TEST(test_htttp_parse_dispatches_request);
+    RUN_TEST(test_htttp_parse_dispatch_set_before_line_parse_failure);
+    RUN_TEST(test_htttp_parse_invalid_request_line_propagates);
+    RUN_TEST(test_htttp_parse_invalid_response_line_propagates);
+    RUN_TEST(test_htttp_parse_missing_blank_line_terminator);
+    RUN_TEST(test_htttp_parse_blank_line_terminator_present);
+    RUN_TEST(test_htttp_parse_resets_stale_header_count);
+    RUN_TEST(test_htttp_parse_invalid_header_propagates);
+    RUN_TEST(test_htttp_parse_body_sliced_correctly);
+    RUN_TEST(test_htttp_parse_empty_body);
+    RUN_TEST(test_htttp_parse_empty_input);
 
     return UNITY_END();
 }
